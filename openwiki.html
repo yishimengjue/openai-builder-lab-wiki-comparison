@@ -1,0 +1,1215 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpenWiki · Wiki 对比结果</title><link rel="stylesheet" href="assets/styles.css?v=20260907-2"></head><body class="hide-technical"><nav class="topbar"><a class="brand" href="index.html">Wiki 对比结果</a><a class="" href="index.html">对比首页</a><a class="" href="repository-intro.html">仓库说明</a><a class="" href="local-skill.html">Local Skill</a><a class="" href="deepwiki-open.html">DeepWiki Open</a><a class="active" href="openwiki.html">OpenWiki</a><a class="" href="codewiki.html">CodeWiki</a><a class="" href="devinwiki.html">DeepWiki（Devin 托管版）</a><a class="" href="issue-summary.html">问题汇总</a></nav><header class="page-hero"><div class="eyebrow">工具生成的完整 Wiki · 核对代码版本 e87f060e</div><h1>OpenWiki</h1><p class="lead">文档形式：11 页主题中文 Wiki。主要特点：按主题查找项目说明。下方保留完整 Wiki，页面顶部和右侧列出与代码不一致或容易误解的部分。</p><div class="toolbar"><button class="is-active" data-tech-toggle>显示技术细节</button><input class="search" data-doc-search placeholder="在当前 Wiki 中搜索"></div></header><section class="issue-overview"><div class="issue-overview-heading"><div><div class="eyebrow">与代码核对的结果</div><h2>已确认 3 个内容错误</h2></div><p>点击错误查看 Wiki 的原说法、代码实际表现和修改建议。原始 Wiki 内容没有被改写。</p></div><div class="issue-index"><a class="issue-index-item critical-row" href="#issue-openwiki-1"><span class="severity severity-critical">严重</span><span>把两种后端称为等价</span></a><a class="issue-index-item critical-row" href="#issue-openwiki-2"><span class="severity severity-critical">严重</span><span>把语音搜索链路当作已经可用</span></a><a class="issue-index-item medium-row" href="#issue-openwiki-3"><span class="severity severity-medium">一般</span><span>非流式阶段范围前后不一致</span></a></div></section><div class="reader-layout"><aside class="toc"><h2>章节目录</h2><a href="#original-1-next-js-api-路由与-python-后端对照">Next.js API 路由与 Python 后端对照</a><a href="#original-2-常量-配置与环境变量">常量、配置与环境变量</a><a href="#original-3-前端组件与状态管理">前端组件与状态管理</a><a href="#original-4-挑战关卡逐级解析">挑战关卡逐级解析</a><a href="#original-5-外部集成-openai-serpapi-realtime">外部集成（OpenAI / SerpAPI / Realtime）</a><a href="#original-6-仓库概述与结构">仓库概述与结构</a><a href="#original-7-快速开始">快速开始</a><a href="#original-8-聊天对话执行流程">聊天对话执行流程</a><a href="#original-9-实时语音模式-realtime-api-webrtc">实时语音模式（Realtime API + WebRTC）</a><a href="#original-10-流式响应-sse-协议">流式响应（SSE）协议</a><a href="#original-11-函数调用-工具调用-流程">函数调用（工具调用）流程</a></aside><main class="reader"><div id="wiki-original"><article class="wiki-doc" id="original-1-next-js-api-路由与-python-后端对照"><div class="doc-kicker">01 · api-routes.md</div><h1>Next.js API 路由与 Python 后端对照</h1>
+<p>本文档对比 Wanderlust Concierge 项目中两套可互换的后端实现：<strong>Next.js 内建 API 路由</strong>（位于 <code>frontend/app/api/**/route.ts</code>）与 <strong>Python Flask 后端</strong>（位于 <code>python-backend/app.py</code>）。两者都向 OpenAI 聊天补全和 SerpAPI 转发请求，并为聊天机器人提供工具调用。它们面向同一套前端，是二选一的关系（不是叠加层），开发时可通过修改前端注释掉的行来切换。</p>
+<h2>两条后端选择路径</h2>
+<p>前端不直接调用 OpenAI 或 SerpAPI，而是由后端代理。切换后端只需改变一个 fetch URL：把 <code>/api/&lt;name&gt;</code>（Next.js 路由）换成 <code>http://localhost:8000/&lt;name&gt;</code>（Flask，运行于 8000 端口）。</p>
+<div class="mermaid">flowchart TD
+    UI[&quot;React 前端组件&quot;] --&gt; TURN[&quot;lib/assistant.ts handleTurn&quot;]
+    UI --&gt; TOOL[&quot;lib/tools.ts handleTool&quot;]
+
+    TURN --&gt;|&quot;fetch 默认&quot;| R1[&quot;/api/get_response (Next.js, SSE 流式)&quot;]
+    TURN --&gt;|&quot;fetch 注释切换&quot;| P1[&quot;/get_response (Flask, 8000 端口)&quot;]
+
+    TOOL --&gt;|&quot;search_location 默认&quot;| R2[&quot;/api/search_location (serpapi getJson)&quot;]
+    TOOL --&gt;|&quot;search_location 注释切换&quot;| P2[&quot;/search_location (GoogleSearch)&quot;]
+    TOOL --&gt;|&quot;plan_itinerary 默认&quot;| R3[&quot;/api/create_itinerary (model o1)&quot;]
+    TOOL --&gt;|&quot;plan_itinerary 注释切换&quot;| P3[&quot;/plan_itinerary (model o1)&quot;]
+
+    VOICE[&quot;components/voice-mode.tsx&quot;] --&gt;|&quot;fetch&quot;| R4[&quot;/api/session (Realtime ephemeral token)&quot;]
+
+    R1 --&gt; O1[&quot;OpenAI chat completions stream&quot;]
+    P1 --&gt; O1
+    R2 --&gt; S[&quot;SerpAPI Google engine&quot;]
+    P2 --&gt; S
+    R3 --&gt; O2[&quot;OpenAI chat completions (o1)&quot;]
+    P3 --&gt; O2
+    R4 --&gt; OR[&quot;POST api.openai.com/v1/realtime/sessions&quot;]
+</div>
+<p><em>图：前端通过 fetch 在 Next.js API 路由（默认）与 Flask 后端（注释切换）之间的选择路径。</em></p>
+<p>后端选择点出现在两个前端文件中，以注释形式标注 Python 替代方案：</p>
+<ul>
+<li><code>lib/assistant.ts</code> 的 <code>handleTurn</code> 默认 <code>fetch(&#39;/api/get_response&#39;)</code>，旁边注释了 <code>fetch(&#39;http://localhost:8000/get_response&#39;)</code>。</li>
+<li><code>lib/tools.ts</code> 的 <code>handleTool</code> 默认 <code>fetch(&#39;/api/search_location&#39;)</code> 与 <code>fetch(&#39;/api/create_itinerary&#39;)</code>，旁边注释了 <code>http://localhost:8000/search_location</code> 与 <code>http://localhost:8000/plan_itinerary</code>。</li>
+</ul>
+<p>因此文本聊天（assistant 组件）依赖 <code>get_response</code> 路径，工具调用（<code>search_location</code>、<code>plan_itinerary</code>）走 <code>tools.ts</code> 路径，语音模式（voice-mode 组件）只走 <code>/api/session</code>。</p>
+<h2>Next.js API 路由</h2>
+<p>四个路由均为 <code>app/api/&lt;name&gt;/route.ts</code> 导出的 HTTP handler，由 Next.js 在服务端运行，扮演把浏览器请求转发给 OpenAI / SerpAPI 的代理，避免把 API 密钥暴露给客户端。</p>
+<h3>/api/get_response —— 流式对话</h3>
+<p><code>POST /api/get_response</code> 接收 <code>{ messages }</code>（OpenAI <code>ChatCompletionMessageParam[]</code>，含 system 提示词），使用 TypeScript OpenAI SDK 的 <code>openai.beta.chat.completions.stream</code>（<code>MODEL = &#39;gpt-4o&#39;</code>）发起流式补全，并返回一个 SSE 流。它把 OpenAI 的增量事件重映射为三种前端可消费的事件，每个都编码为 <code>data: &lt;json&gt;\n\n</code>：</p>
+<ul>
+<li><code>assistant_delta</code> —— <code>delta.content</code> 的普通文本增量；</li>
+<li><code>function_arguments_delta</code> —— <code>delta.tool_calls[0]</code> 的增量参数，携带 <code>callId</code>、<code>name</code>、增量 <code>arguments</code>；</li>
+<li><code>function_arguments_done</code> —— 当 <code>finishReason === &#39;tool_calls&#39;</code> 时发送，携带累积的完整 <code>arguments</code>，随后重置累积状态。</li>
+</ul>
+<p>请求体里的 <code>tools</code>（来自 <code>lib/tools.ts</code> 的 <code>search_location</code> 与 <code>plan_itinerary</code>）作为 OpenAI 工具传给模型。响应头为 <code>Content-Type: text/event-stream</code>、<code>Cache-Control: no-cache</code>、<code>Connection: keep-alive</code>。任何异常返回 <code>{ error: message }</code> 的 500 JSON。</p>
+<h3>/api/search_location —— SerpAPI 搜索</h3>
+<p><code>POST /api/search_location</code> 接收 <code>{ location, search_query }</code>，从 <code>process.env.SERPAPI_API_KEY</code> 读取密钥（缺失则抛错），用 <code>serpapi</code> 包的 <code>getJson</code>（<code>engine: &#39;google&#39;</code>、<code>limit: 5</code>）检索，返回 <code>response.organic_results</code> 作为 JSON。前端 <code>handleTool</code> 在模型发起 <code>search_location</code> 工具调用时调用此路由，voice-mode 组件处理 Realtime 触发的 <code>search_location</code> 时也复用此路由。</p>
+<h3>/api/create_itinerary —— 行程规划</h3>
+<p><code>POST /api/create_itinerary</code> 接收 <code>{ stops }</code>，用 model <code>o1</code> 和 <code>ITINERARY_PROMPT</code>（system）调用 <code>openai.chat.completions.create</code>，把 <code>stops</code> JSON 作为 user 内容，返回 <code>{ itinerary: result }</code>。前端 <code>handleTool</code> 把模型发起的 <code>plan_itinerary</code> 工具调用转发到此路由（端点名与工具名不同，是两者之间的映射点）。</p>
+<h3>/api/session —— Realtime API 前置步骤</h3>
+<p><code>GET /api/session</code> 是语音模式专属的前置步骤，为 OpenAI Realtime API 获取 <strong>ephemeral session token</strong>。它向 <code>https://api.openai.com/v1/realtime/sessions</code> 发起 <code>POST</code>，请求体含 <code>model: gpt-4o-realtime-preview</code>（<code>REALTIME_MODEL</code>）与 <code>voice: coral</code>（<code>VOICE</code>），请求头用 <code>process.env.OPENAI_API_KEY</code> 鉴权，并把响应体（含 <code>client_secret</code>）原样回传给前端。Flask 后端没有对应端点。</p>
+<p>前端 <code>voice-mode.tsx</code> 的 <code>startSession</code> 先 <code>fetch(&#39;/api/session&#39;)</code> 取回 <code>client_secret.value</code>，再按该 token 将 SDP offer POST 到 <code>https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview</code>，建立 WebRTC 连接与 <code>oai-events</code> data channel。</p>
+<h2>Flask 后端（python-backend/app.py）</h2>
+<p>Flask 后端是 Next.js 路由的<strong>等价替代</strong>而非子集。它用 <code>Flask(__name__)</code> 建应用、<code>CORS(app)</code> 开跨域、<code>load_dotenv()</code> 从 <code>.env</code> 加载环境变量、<code>client = OpenAI()</code> 初始化 SDK，并在 <code>app.run(debug=True, port=8000)</code> 运行于 8000 端口。四个端点：</p>
+<ul>
+<li><code>GET /</code> —— 返回 <code>&quot;Server is running&quot;</code>（健康检查，Next.js 无对应）。</li>
+<li><code>POST /get_response</code> —— 接收 <code>{ messages }</code>，以 <code>MODEL = &quot;gpt-4o&quot;</code> 和同一份 <code>tools</code> 定义（<code>search_location</code>、<code>plan_itinerary</code>，内嵌于 app.py）调用 <code>client.chat.completions.create</code>，返回完整的 <code>completion.choices[0].message</code> JSON。<strong>注意：它不流式</strong>（与 Next.js 的 SSE 流不同），因此若前端 <code>assistant.ts</code> 仍按 SSE 解析会得到单块 JSON；切换后端需同步调整客户端解析方式。</li>
+<li><code>POST /search_location</code> —— 读取 <code>os.getenv(&#39;SERPAPI_API_KEY&#39;)</code>（缺失抛 <code>ValueError</code>），用 <code>serpapi</code> 的 <code>GoogleSearch(params).get_dict()</code> 检索，返回 <code>results[&quot;organic_results&quot;]</code>。与 Next.js 版本等价（同为 <code>engine: google</code>、<code>limit: 5</code>），只是把 <code>getJson</code> 换成 <code>GoogleSearch</code>。</li>
+<li><code>POST /plan_itinerary</code> —— 接收 <code>{ stops }</code>，与 Next.js <code>/api/create_itinerary</code> 完全等价：model <code>o1</code> + <code>ITINERARY_PROMPT</code>（内嵌于 app.py）+ <code>json.dumps(stops)</code>，返回 <code>{ &quot;itinerary&quot;: ... }</code>。</li>
+</ul>
+<p>同一定义（工具 schema、提示词、SDK 调用）在 Next.js 版本中分散在 <code>lib/constants.ts</code>、<code>lib/tools.ts</code> 与各 route，而在 Flask 版本中集中于 app.py。两处 <code>ITINERARY_PROMPT</code> 与两处 <code>MODEL = &quot;gpt-4o&quot;</code> 文本一致。</p>
+<h2>差异小结</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Next.js API 路由</th>
+<th>Flask 后端</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>运行方式</td>
+<td>Next.js serverless route handler</td>
+<td>Flask 应用，8000 端口</td>
+</tr>
+<tr>
+<td>SerpAPI 调用</td>
+<td><code>serpapi</code> 的 <code>getJson</code></td>
+<td><code>serpapi</code> 的 <code>GoogleSearch</code></td>
+</tr>
+<tr>
+<td>OpenAI SDK</td>
+<td>TypeScript SDK</td>
+<td>Python <code>openai</code> SDK（等价）</td>
+</tr>
+<tr>
+<td><code>/get_response</code></td>
+<td>SSE 流式（<code>assistant_delta</code> 等）</td>
+<td>非流式，返回完整 message JSON</td>
+</tr>
+<tr>
+<td>会话前置</td>
+<td><code>/api/session</code>（Realtime token）</td>
+<td>无对应端点</td>
+</tr>
+<tr>
+<td>额外端点</td>
+<td>无</td>
+<td><code>GET /</code> 健康检查</td>
+</tr>
+<tr>
+<td>环境变量</td>
+<td><code>OPENAI_API_KEY</code>、<code>SERPAPI_API_KEY</code>（Next.js 运行期读取）</td>
+<td><code>load_dotenv()</code> 从 <code>.env</code> 加载</td>
+</tr>
+</tbody></table>
+<h2>环境变量与配置</h2>
+<p>两个后端都需要 <code>OPENAI_API_KEY</code>（在 <code>lib/assistant.ts</code> <code>new OpenAI()</code>、Flask <code>client = OpenAI()</code> 中由 SDK 自动读取；<code>/api/session</code> 显式使用 <code>process.env.OPENAI_API_KEY</code>）。搜索功能需要 <code>SERPAPI_API_KEY</code>：Next.js 在 <code>/api/search_location</code> 中读 <code>process.env.SERPAPI_API_KEY</code>（缺失抛错），Flask 在 <code>/search_location</code> 中读 <code>os.getenv(&#39;SERPAPI_API_KEY&#39;)</code>（缺失抛 <code>ValueError</code>）。</p>
+<p>Flask 后端用 <code>python-dotenv</code>（<code>load_dotenv()</code>）从 <code>.env</code> 加载密钥；仓库中的 <code>.env.example</code> 只列了 <code>OPENAI_API_KEY=&lt;your-openai-api-key&gt;</code>。Next.js 前端用 <code>.env</code> / <code>.env.local</code> 提供密钥（<code>/.gitignore</code> 忽略 <code>.env</code> 与 <code>.env*.local</code>）。依赖清单见 <code>python-backend/requirements.txt</code>（Flask、Flask-Cors、openai、serpapi 的 <code>google_search_results</code>、python-dotenv 等），前端依赖见 <code>package.json</code>（<code>openai</code>、<code>serpapi</code>、<code>next</code> 等）。</p>
+<h2>错误处理对照</h2>
+<p>Next.js 路由统一用 try/catch 包裹，失败返回 <code>{ error: &lt;message&gt; }</code> + HTTP 500；<code>/api/get_response</code> 额外在流的 <code>start</code> 内部 catch，失败时 <code>controller.error(error)</code> 终止流；<code>/api/search_location</code> 与 Flask <code>/search_location</code> 都会在缺少 <code>SERPAPI_API_KEY</code> 时抛错。Flask 端点默认由 Flask/Werkzeug 返回 500 错误页（未像 Next.js 那样统一包裹为 JSON），错误处理比 Next.js 路由更原始。</p>
+</article><article class="wiki-doc" id="original-2-常量-配置与环境变量"><div class="doc-kicker">02 · constants-config.md</div><h1>常量、配置与环境变量</h1>
+<p>本页面集中说明旅行助手应用的可调参数：前端 <code>lib/constants.ts</code> 中集中定义的模型、提示词、语音与 Realtime 配置，以及前后端各自的环境变量与配置文件入口。理解这些值可以在不改动业务逻辑的前提下快速调整模型、语气与工具行为。</p>
+<h2>配置入口一览</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>challenge5/frontend/lib/constants.ts</code></td>
+<td>前端集中保存模型名、提示词、Realtime 配置与工具定义</td>
+</tr>
+<tr>
+<td><code>challenge5/frontend/next.config.mjs</code></td>
+<td>Next.js 配置，当前为空默认配置</td>
+</tr>
+<tr>
+<td><code>challenge5/frontend/.env</code>（由 <code>.env.example</code> 派生，被 <code>.gitignore</code> 忽略）</td>
+<td>前端 API 密钥</td>
+</tr>
+<tr>
+<td><code>challenge5/python-backend/.env.example</code></td>
+<td>Python 后端环境变量模板（<code>OPENAI_API_KEY</code>）</td>
+</tr>
+<tr>
+<td><code>challenge5/python-backend/app.py</code></td>
+<td>通过 <code>load_dotenv()</code> 加载 <code>.env</code> 并使用环境变量</td>
+</tr>
+</tbody></table>
+<h2>前端常量（lib/constants.ts）</h2>
+<p><code>challenge5/frontend/lib/constants.ts</code> 是前端参数的单一集中来源，各导出值被 <code>assistant.ts</code>、<code>voice-mode.tsx</code>、<code>app/api/session/route.ts</code> 等消费。逐项说明：</p>
+<ul>
+<li><strong><code>MODEL</code></strong>：值为 <code>gpt-4o</code>，用于非流式的对话补全（<code>/api/get_response</code> 后端默认模型也定义为 <code>gpt-4o</code>）。</li>
+<li><strong><code>REALTIME_MODEL</code></strong>：值为 <code>gpt-4o-realtime-preview</code>，用于 OpenAI Realtime API 的实时语音对话。</li>
+<li><strong><code>REALTIME_BASE_URL</code></strong>：值为 <code>https://api.openai.com/v1/realtime</code>，<code>voice-mode.tsx</code> 将模型参数拼接到该 URL 上发起 WebRTC 的 SDP 握手。</li>
+<li><strong><code>VOICE</code></strong>：值为 <code>coral</code>，在 <code>/api/session</code> 路由请求 ephemeral token 时传给 Realtime 会话。</li>
+<li><strong><code>SYSTEM_PROMPT</code></strong>：旅行助手“Wanderlust Concierge”的系统提示词，指导助手询问出行地点与时长、推荐目的地/活动/住宿，并在合适时机调用 <code>search_location</code> 工具。</li>
+<li><strong><code>INITIAL_MESSAGE</code></strong>：聊天窗口的初始消息（“Hi, how can I help you for your upcoming trip?”）。</li>
+<li><strong><code>ITINERARY_PROMPT</code></strong>：行程规划推理提示词，指导根据停留时长、访问类型与人数规划最优游览顺序。该提示词文本与 Python 后端 <code>app.py</code> 中的 <code>ITINERARY_PROMPT</code> 完全一致。</li>
+<li><strong><code>REALTIME_PROMPT</code></strong>：Realtime 语音会话专用的热情洋溢版旅行助手提示词。</li>
+<li><strong><code>REALTIME_TOOLS</code></strong>：Realtime 会话暴露给模型的工具定义，当前仅包含 <code>search_location</code>（按地点与查询词搜索地标或酒店）。</li>
+</ul>
+<p>需要注意前端存在两套并列的工具定义：<code>constants.ts</code> 的 <code>REALTIME_TOOLS</code> 用于 Realtime 语音会话，而 <code>lib/tools.ts</code> 导出的 <code>tools</code>（含 <code>search_location</code> 与 <code>plan_itinerary</code>）用于普通文本对话的工具调用。<code>SYSTEM_PROMPT</code> / <code>ITINERARY_PROMPT</code> / <code>REALTIME_PROMPT</code> 分别对应普通对话、行程规划与语音会话三个场景。</p>
+<h2>next.config.mjs</h2>
+<p><code>challenge5/frontend/next.config.mjs</code> 仅导出空对象：</p>
+<pre><code class="language-js">/** @type {import(&#39;next&#39;).NextConfig} */
+const nextConfig = {};
+export default nextConfig;
+</code></pre>
+<p>这是一个<strong>空默认配置</strong>，没有任何特殊行为：未启用实验性特性、未配置 rewrite/redirect、未设置环境变量映射。项目依赖 Next.js 默认约定（如自动读取 <code>.env</code> / <code>.env.local</code>）。因此若需新增构建或代理行为，需在此处显式添加配置。</p>
+<h2>环境变量</h2>
+<p>整个系统将密钥与可变配置放入环境变量，而非硬编码在源码中。<code>.env</code> 文件被 <code>.gitignore</code> 忽略，源码仓库只提交 <code>.env.example</code> 模板。</p>
+<h3>前端环境变量</h3>
+<ul>
+<li><strong><code>OPENAI_API_KEY</code></strong>：openai SDK（服务端 <code>app/api/*</code> 路由）会自动读取该变量。例如 <code>/api/session/route.ts</code> 用 <code>process.env.OPENAI_API_KEY</code> 作为 Bearer token 换取 Realtime ephemeral token。</li>
+<li><strong><code>SERPAPI_API_KEY</code></strong>：<code>app/api/search_location/route.ts</code> 读取，用于 Google Search。该路由在缺少该变量时抛出 <code>SERPAPI_API_KEY is not defined</code> 错误并返回 500。</li>
+</ul>
+<p>前端项目本身没有提交 <code>.env.example</code> 文件；密钥约定与后端一致（见下）。</p>
+<h3>Python 后端环境变量</h3>
+<p><code>challenge5/python-backend/.env.example</code> 是后端的环境变量模板，仅定义：</p>
+<pre><code>OPENAI_API_KEY=&lt;your-openai-api-key&gt;
+</code></pre>
+<p>后端启动时通过 <code>python-dotenv</code> 的 <code>load_dotenv()</code> 加载项目根目录下的 <code>.env</code> 文件（<code>app.py</code> 顶部 <code>from dotenv import load_dotenv</code> 后调用 <code>load_dotenv()</code>）。随后：</p>
+<ul>
+<li><code>client = OpenAI()</code> 依赖 openai SDK 自动从环境读取 <code>OPENAI_API_KEY</code>。</li>
+<li><code>/search_location</code> 路由用 <code>os.getenv(&#39;SERPAPI_API_KEY&#39;)</code> 读取密钥，若未定义则 <code>raise ValueError(&#39;SERPAPI_API_KEY is not defined&#39;)</code>。</li>
+</ul>
+<p>因此后端至少需要 <code>OPENAI_API_KEY</code> 才能工作；若使用 <code>search_location</code> 功能则还需配置 <code>SERPAPI_API_KEY</code>（该变量未出现在 <code>.env.example</code> 模板中，需手动补充）。</p>
+<h2>配置与运行的关系</h2>
+<p>调整运行时行为时需注意配置的消费位置：</p>
+<ul>
+<li>更换模型可在 <code>constants.ts</code> 的 <code>MODEL</code> / <code>REALTIME_MODEL</code> 修改；常用文本对话同时受后端 <code>app.py</code> 的 <code>MODEL</code> 影响。</li>
+<li>更换语音在 <code>constants.ts</code> 的 <code>VOICE</code> 修改，经 <code>/api/session</code> 传入 Realtime。</li>
+<li>提示词语气在各 <code>*_PROMPT</code> / <code>SYSTEM_PROMPT</code> 中调整，普通对话与语音会话使用不同提示词。</li>
+<li>新增或调整工具：语音会话改 <code>REALTIME_TOOLS</code>，文本对话改 <code>lib/tools.ts</code> 的 <code>tools</code>，同时保持 <code>handleTool</code> 与对应 API 路由一致。</li>
+</ul>
+<h2>相关页面</h2>
+<ul>
+<li><a href="#original-1-next-js-api-路由与-python-后端对照">/openwiki/architecture/api-routes.md</a> — 各 API 路由如何消费上述常量与环境变量</li>
+<li><a href="#original-5-外部集成-openai-serpapi-realtime">/openwiki/integrations/external-apis.md</a> — OpenAI 与 SerpAPI 的集成细节</li>
+<li><a href="#original-6-仓库概述与结构">/openwiki/overview.md</a> — 项目总览</li>
+</ul>
+</article><article class="wiki-doc" id="original-3-前端组件与状态管理"><div class="doc-kicker">03 · frontend-components.md</div><h1>前端组件与状态管理</h1>
+<p>前端 UI 位于 <code>frontend/</code>（每个 challenge 目录下各有一份 Next.js App Router 应用）。UI 层围绕一个<strong>旅行助手聊天界面</strong>组织：<code>Assistant</code> 持有整个会话状态，把 <code>chatMessages</code> 下发给 <code>Chat</code>；<code>Chat</code> 按条目类型（type）分发到 <code>Message</code> 或 <code>ToolCall</code> 渲染；<code>Assistant</code> 通过 <code>useConversationStore</code>（zustand）读写会话状态。challenge4 起，<code>Chat</code> 的输入工具栏新增了 <code>VoiceMode</code> 按钮，用于切换到 OpenAI Realtime 语音会话。</p>
+<h2>组件树与数据流</h2>
+<p>整体组件树和数据流向如下：</p>
+<div class="mermaid">flowchart TD
+    Page[&quot;app/page.tsx - Main&quot;]
+    Page --&gt; Assistant[&quot;Assistant (components/assistant.tsx)&quot;]
+    Assistant --&gt; Store[&quot;useConversationStore (zustand)&quot;]
+    Assistant --&gt; Chat[&quot;Chat (components/chat.tsx)&quot;]
+    Chat --&gt; Msg[&quot;Message (message.tsx)&quot;]
+    Chat --&gt; TC[&quot;ToolCall (tool-call.tsx)&quot;]
+    Chat --&gt; VM[&quot;VoiceMode (voice-mode.tsx) - challenge4+&quot;]
+
+    Store --&gt;|&quot;chatMessages: Item[]&quot;| Assistant
+    Assistant --&gt;|&quot;addChatMessage / addConversationItem&quot;| Store
+    Chat --&gt;|&quot;items + onSendMessage + loading&quot;| Assistant
+    Chat --&gt;|&quot;item.type 分发&quot;| Msg
+    Chat --&gt;|&quot;item.type 分发&quot;| TC
+</div>
+<p><em>组件树：page.tsx 渲染 Assistant；Assistant 持有 store 状态的读写入口并把 chatMessages 传给 Chat；Chat 根据 item.type 分发渲染 Message 或 ToolCall；challenge4/5 在 Chat 输入工具栏加入 VoiceMode 按钮。</em></p>
+<p>组件职责：</p>
+<ul>
+<li><strong><code>app/page.tsx</code>（Main）</strong>：应用根页面，居中布局并渲染唯一的 <code>&lt;Assistant /&gt;</code>（见 <code>starting_point/frontend/app/page.tsx</code>、<code>challenge5/frontend/app/page.tsx</code>，两处均为 241 字节的同一结构）。</li>
+<li><strong><code>Assistant</code></strong>：<code>&#39;use client&#39;</code> 组件，是 UI 与 store、自研 <code>lib/assistant</code> 的桥。它从 store 取出 <code>chatMessages</code> 和 add 动作，定义 <code>handleSendMessage</code>（把用户输入构造成一个 <code>Item</code> 与一个 <code>ChatCompletionMessageParam</code>，分别 <code>addChatMessage</code> / <code>addConversationItem</code>，然后进入推理流程），并把 <code>items</code>、<code>onSendMessage</code>、<code>loading</code> 作为 props 传给 <code>Chat</code>。starting_point 版用本地 <code>loading</code> 状态控制加载，challenge5 版去掉了 <code>loading</code> 并改用 <code>processMessages()</code>。</li>
+<li><strong><code>Chat</code></strong>：接受 <code>items: Item[]</code> 与 <code>onSendMessage</code>（以及 starting_point/challenge4 的 <code>loading</code>）。维护输入框 <code>textarea</code> 的本地状态，Enter 发送；维护 <code>itemsEndRef</code> 并在 <code>items</code> 变化后滚动到底部。对每个 <code>item</code>，<code>item.type === &#39;function_call&#39;</code> 时渲染 <code>ToolCall</code>（并传入 <code>previousItem</code>），否则渲染 <code>Message</code>。challenge4/5 在输入框与发送按钮之间插入 <code>&lt;VoiceMode /&gt;</code>。</li>
+<li><strong><code>Message</code></strong>：接收 <code>MessageItem</code>。按 <code>role</code> 分左右布局（user 右对齐 white，assistant 左对齐 black），用 <code>react-markdown</code> 渲染 <code>content</code>。starting_point/challenge4 版支持 <code>loading</code>（渲染三点动画）；challenge5 版去掉了 loading 分支。</li>
+<li><strong><code>ToolCall</code></strong>：接收 <code>FunctionCallItem</code> 与 <code>previousItem</code>，用于展示工具调用卡片。标题由 <code>functionCall.name</code> 按 <code>_</code> 拆分后转大驼峰显示，右侧有可点击箭头（<code>ChevronRight</code>）展开/收起详情。展开后通过 <code>react-syntax-highlighter</code>（<code>Prism</code>/<code>coy</code> 主题）以 JSON 显示 <code>parsedArguments</code>，并在有 <code>output</code> 时显示解析后的输出。若 <code>previousItem.type === &#39;function_call&#39;</code>，渲染一段竖向连接线（视觉上把连续工具调用串起来）。challenge5 版将可复用的展示逻辑拆成内部的 <code>ApiCallCell</code>。</li>
+<li><strong><code>VoiceMode</code></strong>：challenge4/5 的实时语音组件，本身是一个麦克风图标按钮，使用 WebRTC 与 OpenAI Realtime API 建立会话（通过 <code>/api/session</code> 获取临时 token，创建 <code>RTCPeerConnection</code> 和 <code>oai-events</code> 数据通道），在输入工具栏中与文本发送按钮并排。实时路径不写入 <code>useConversationStore</code>，而是独立管理自己的 <code>RTCDataChannel</code> / peer connection 状态。</li>
+</ul>
+<h2>Item 联合类型与 ToolCall 展示</h2>
+<p><code>lib/assistant.ts</code> 定义了两个可辨识联合类型（discriminated union）：</p>
+<ul>
+<li><code>MessageItem</code>：<code>{ type: &#39;message&#39;; role: &#39;user&#39; | &#39;assistant&#39; | &#39;system&#39;; content: string }</code></li>
+<li><code>FunctionCallItem</code>：<code>{ type: &#39;function_call&#39;; status: &#39;in_progress&#39; | &#39;completed&#39; | &#39;failed&#39;; id; name; arguments; parsedArguments: any; output: string | null }</code></li>
+<li><code>Item = MessageItem | FunctionCallItem</code></li>
+</ul>
+<p><code>Chat</code> 通过 <code>item.type</code> 区分两者并分发到不同组件：<code>function_call</code> 走 <code>ToolCall</code>，否则走 <code>Message</code>。<code>ToolCall</code> 据此读取 <code>FunctionCallItem</code> 上的字段：<code>name</code> 显示为标题，<code>parsedArguments</code> 以 JSON 呈现可展开的参数，<code>output</code>（存在时）以 JSON 呈现工具返回结果。<code>status</code> 字段在这一版本的 <code>ToolCall</code> 中尚未用于视觉状态（标题固定显示），但为流式更新记录了工具调用的生命周期。参见 <code>starting_point/frontend/lib/assistant.ts#L5-L21</code> 与 <code>challenge5/frontend/lib/assistant.ts#L7-L23</code>、<code>challenge5/frontend/components/tool-call.tsx</code>。</p>
+<h2>zustand 状态管理：useConversationStore</h2>
+<p><code>stores/useConversationStore.ts</code> 用 zustand 的 <code>create</code> 定义会话状态，管理两类互相独立的数组：</p>
+<ul>
+<li><strong><code>chatMessages: Item[]</code></strong>：用户可见的聊天条目（<code>MessageItem | FunctionCallItem</code>），驱动 Chat/Message/ToolCall 渲染。初始值是一条 assistant 的 <code>INITIAL_MESSAGE</code>。</li>
+<li><strong><code>conversationItems: ChatCompletionMessageParam[]</code></strong>：发给 Chat Completions API 的消息结构（含 <code>role</code>、<code>content</code>、以及工具调用/工具输出），初始为空。</li>
+</ul>
+<p>Store 暴露 <code>setChatMessages</code> / <code>setConversationItems</code>（整体替换）与 <code>addChatMessage</code> / <code>addConversationItem</code>（追加单条）。<code>Assistant</code>（及其调用的 <code>processMessages</code>/<code>handleTurn</code>）维护这两个数组的并行一致性：用户输入同时追加到两者；流式回复时两者同步累积。推理逻辑（在 <code>lib/assistant.ts</code>）通过 <code>useConversationStore.getState()</code> 读取当前快照并对两个数组做同步更新。参见 <code>starting_point/frontend/stores/useConversationStore.ts</code> 与 <code>challenge5/frontend/stores/useConversationStore.ts</code>（两处实现一致）。</p>
+<h2>streaming 下的 Message 与 ToolCall 实时更新</h2>
+<p>在 challenge5 中，推理不再一次性返回，而是由 <code>/api/get_response</code>（<code>app/api/get_response/route.ts</code>）以 <code>text/event-stream</code> 流式推送事件，前端 <code>handleTurn</code> 用 <code>fetch</code> 的 <code>ReadableStream</code> 读取 SSE 数据，逐条调用 <code>onMessage</code> 回调。<code>processMessages</code> 在 <code>lib/assistant.ts</code> 中按事件类型增量更新两个数组：</p>
+<ul>
+<li><strong><code>assistant_delta</code></strong>：追加/更新 <code>assistantMessageContent</code>。若 <code>chatMessages</code> 末尾是 assistant 的 <code>message</code>，就地 <code>content = assistantMessageContent</code>（实现打字机效果）；否则 push 一条新的 assistant message。<code>conversationItems</code> 做相同处理（末尾 assistant 消息就地更新，否则 push）。每次更新后调用 <code>setChatMessages([...])</code> / <code>setConversationItems([...])</code>（新数组引用触发 zustand 订阅与 React 重渲染）。</li>
+<li><strong><code>function_arguments_delta</code></strong>：累积 <code>functionArguments</code>，用 <code>partial-json</code> 的 <code>parse</code> 生成 <code>parsedArguments</code>。若 <code>chatMessages</code> 末尾是同一 <code>callId</code> 的 <code>function_call</code>，就地更新 <code>arguments</code> / <code>parsedArguments</code>；否则 push 一条 <code>status: &#39;in_progress&#39;</code> 的新 <code>function_call</code>。<code>conversationItems</code> 同步累积 <code>tool_calls[0].function.arguments</code>。</li>
+<li><strong><code>function_arguments_done</code></strong>：工具参数收集完毕，调用 <code>handleTool(name, parse(functionArguments))</code> 执行工具（如 <code>search_location</code>、<code>plan_itinerary</code>，见 <code>lib/tools.ts</code>），把结果设为 <code>chatMessages</code> 末尾 <code>function_call</code> 的 <code>status: &#39;completed&#39;</code> 与 <code>output</code>，并向 <code>conversationItems</code> push 一条 <code>role: &#39;tool&#39;</code> 的消息，然后<strong>递归调用 <code>processMessages()</code></strong> 让模型基于工具结果继续输出。</li>
+</ul>
+<p>因此，Message 的文本与 ToolCall 的参数/输出都是随流式事件逐步原地更新的，而非整体重建。参见 <code>challenge5/frontend/lib/assistant.ts#L85-L241</code> 与 <code>challenge5/frontend/app/api/get_response/route.ts</code>。</p>
+<h2>扩展点：ui 套件</h2>
+<p><code>challenge5/frontend/components/ui/</code> 下提供 <code>button.tsx</code>、<code>chart.tsx</code>、<code>table.tsx</code> 三个 shadcn/ui 风格的原子组件。其中 <code>chart.tsx</code>（基于 recharts 的 <code>ChartContainer</code>/<code>ChartTooltip</code>/<code>ChartLegend</code>）与 <code>table.tsx</code>（<code>Table</code>/<code>TableHeader</code>/<code>TableBody</code> 等）在 demo 的业务组件（assistant/chat/message/tool-call/voice-mode）中<strong>均未被引用</strong>，仅各自自引，编译产物不包含它们——它们是为未来 UI 预留的扩展点，可用于把 itinerary/搜索结果以图表或表格形式展示。<code>button.tsx</code> 同样未被业务代码 import。</p>
+<p>开始变更前注意：<code>ui</code> 组件使用 <code>@/lib/utils</code> 中的 <code>cn</code>，装饰器/主题（如 <code>cva</code>、<code>THEMES.dark</code>）依赖 <code>globals.css</code> 与 <code>tailwind.config.ts</code> 中的 CSS 变量，接入时需要确保这些变量已定义。</p>
+<h2>相关页面</h2>
+<ul>
+<li>/openwiki/concepts/challenges.md —— challenge 演进背景</li>
+<li>/openwiki/overview.md —— 仓库与目录概览</li>
+<li>/openwiki/workflows/chat-turn.md —— 一轮完整对话的（流式）处理流程</li>
+</ul>
+</article><article class="wiki-doc" id="original-4-挑战关卡逐级解析"><div class="doc-kicker">04 · ../concepts/challenges.md</div><h1>挑战关卡逐级解析</h1>
+<p><code>openai-builder-lab</code> 是一个分步教程仓库，每个 <code>challengeN</code> 文件夹都代表<strong>完整的、可运行的</strong>前一关卡已完成的版本。读者从 <code>starting_point</code> 出发，逐个关卡补代码，因此每个 challenge 文件夹既是&quot;进展快照&quot;又是&quot;参考答案&quot;。理解每一步&quot;新增了什么、改动了哪个文件&quot;，就等于掌握了整个教程的进度条。</p>
+<h2>递进总览：五个能力台阶</h2>
+<p>整个路线围绕同一个旅行助手 <strong>Wanderlust Concierge</strong> 展开。从默认的固定回复出发，逐步叠加真实模型对话、外部搜索、推理规划、实时语音、流式传输。每一步都独立可运行，前一关是后一关的依赖。</p>
+<div class="mermaid">flowchart TD
+    SP[&quot;starting_point&lt;br/&gt;后端返回固定消息&quot;]
+    SP --&gt; C1[&quot;challenge1&lt;br/&gt;OpenAI Chat Completions 对话&quot;]
+    C1 --&gt; C2[&quot;challenge2&lt;br/&gt;search_location 工具 + 工具调用循环&quot;]
+    C2 --&gt; C3[&quot;challenge3&lt;br/&gt;plan_itinerary 工具 o1 规划行程&quot;]
+    C3 --&gt; C4[&quot;challenge4&lt;br/&gt;实时语音 Realtime API + WebRTC&quot;]
+    C4 --&gt; C5[&quot;challenge5&lt;br/&gt;SSE 流式 + 语音内工具调用&quot;]
+</div>
+<p><em>图：五个挑战的依赖关系，每个后续关卡都建立在上一关卡完整实现之上。</em></p>
+<h2>starting_point：默认固定回复</h2>
+<p>starting_point 是一个前后端骨架，<strong>不含任何真实 AI 能力</strong>。</p>
+<ul>
+<li>前端 <code>frontend/app/api/get_response/route.ts</code> 只 <code>await new Promise(resolve =&gt; setTimeout(resolve, 2000))</code> 睡眠 2 秒，然后返回硬编码的 JSON <code>{ role: &#39;assistant&#39;, content: &#39;This is a default message, update the backend to get a response from the OpenAI API instead.&#39; }</code>。</li>
+<li>对应 python-backend <code>app.py</code> 的 <code>/get_response</code> 同样 <code>time.sleep(2)</code> 后返回相同的固定文案。</li>
+<li>前端 <code>lib/tools.ts</code> 是空壳：<code>export const tools = []</code>，<code>handleTool</code> 为空函数；<code>lib/assistant.ts</code> 的 <code>handleTurn</code> 只做一次非流式 <code>fetch(&#39;/api/get_response&#39;)</code>。</li>
+</ul>
+<blockquote>
+<p>关键文件：<code>frontend/app/api/get_response/route.ts</code>（Next.js 版）、<code>python-backend/app.py</code> 的 <code>/get_response</code>（Python 版）。两处的 <code>get_response</code> 是教程里先后端实现的前端点。</p>
+</blockquote>
+<h2>challenge1：对接 OpenAI Chat Completions</h2>
+<p>第一个关卡把占位回复换成<strong>真实模型对话</strong>。</p>
+<ul>
+<li>前端 <code>frontend/app/api/get_response/route.ts</code> 用 <code>openai.chat.completions.create({ model: MODEL, messages })</code> 调用 OpenAI，<code>MODEL</code> 来自 <code>lib/constants.ts</code>（<code>gpt-4o</code>），返回 <code>response.choices[0].message</code>。system prompt 已包含在 <code>messages</code> 数组里。</li>
+<li>python-backend <code>app.py</code> 用 <code>client.chat.completions.create(model=MODEL, messages=messages)</code> 做同样的事，<code>completion.choices[0].message</code> 作为 JSON 返回。</li>
+</ul>
+<blockquote>
+<p>新增能力：<strong>真实对话</strong>。前端关键改动是 <code>get_response</code> 路由；后端对应改动是 <code>app.py</code> 的 <code>/get_response</code>。此时还没有任何工具。</p>
+</blockquote>
+<h2>challenge2：新增 search_location 工具与工具调用循环</h2>
+<p>第二个关卡引入<strong>函数调用（tool calling）</strong>：模型可以请求调用搜索工具，前端执行并回填结果。</p>
+<ul>
+<li>前端 <code>lib/tools.ts</code> 定义了 <code>tools</code> 数组，包含 <code>search_location</code> 工具（JSON Schema 描述 <code>location</code> 与 <code>search_query</code> 两个必填参数）；<code>handleTool(toolName, parameters)</code> 在该工具被调用时 <code>fetch(&#39;/api/search_location&#39;)</code> 并返回结果。</li>
+<li>前端 <code>app/api/get_response/route.ts</code> 把 <code>tools</code> 一并传给 <code>openai.chat.completions.create</code>。</li>
+<li>前端 <code>lib/assistant.ts</code> 的 <code>handleTurn</code> 增加<strong>工具调用循环</strong>：拿到 assistant 消息后，若含 <code>tool_calls</code>，则用 <code>handleTool</code> 执行并把结果以 <code>role: &#39;tool&#39;</code> 的消息推回对话，然后<strong>递归再调 <code>handleTurn()</code></strong> 让模型基于工具结果继续作答。</li>
+<li>前端 <code>app/api/search_location/route.ts</code> 用 <code>serpapi</code> 包 <code>getJson({ engine: &#39;google&#39;, ... })</code> 搜索，<code>SERPAPI_API_KEY</code> 来自 <code>process.env</code>。</li>
+<li>python-backend <code>app.py</code> 定义同名的 <code>tools</code> 列表，<code>/get_response</code> 把 <code>tools=tools</code> 传给 API；<code>/search_location</code> 用 <code>GoogleSearch(params)</code>（同样 SerpAPI Google 引擎）返回 <code>organic_results</code>。</li>
+</ul>
+<blockquote>
+<p>新增能力：<strong>外部数据 + 多轮工具循环</strong>。前端关键改动是 <code>lib/tools.ts</code>（tools 数组 + handleTool）、<code>lib/assistant.ts</code>（递归工具循环）、<code>app/api/search_location/route.ts</code>；后端对应 <code>app.py</code> 的 <code>tools</code> 与 <code>/search_location</code>。</p>
+</blockquote>
+<h2>challenge3：新增 plan_itinerary 推理规划工具</h2>
+<p>第三个关卡加入第二个工具，用 <strong>o1 推理模型</strong>做行程规划。</p>
+<ul>
+<li>前端 <code>lib/tools.ts</code> 的 <code>tools</code> 数组追加 <code>plan_itinerary</code>（参数为 <code>stops</code> 数组，含 <code>location</code>、<code>duration</code>、<code>type</code>、<code>participants</code>），<code>handleTool</code> 增加分支：该工具被调用时 <code>fetch(&#39;/api/create_itinerary&#39;)</code>。</li>
+<li>前端 <code>app/api/create_itinerary/route.ts</code> 用 model <code>o1</code> + <code>ITINERARY_PROMPT</code>（system）调用 <code>openai.chat.completions.create</code>，把 <code>stops</code> JSON 作为 user 内容，返回 <code>{ itinerary: ... }</code>。</li>
+<li><code>lib/constants.ts</code> 新增 <code>ITINERARY_PROMPT</code>，并把 system prompt 升级为 &quot;Wanderlust Concierge&quot; 引导式旅行助手。</li>
+<li>python-backend <code>app.py</code> 同步新增 <code>plan_itinerary</code> 工具定义与 <code>/plan_itinerary</code> 端点（也使用 <code>model=&quot;o1&quot;</code> + <code>ITINERARY_PROMPT</code>）。</li>
+</ul>
+<blockquote>
+<p>新增能力：<strong>推理型规划</strong>。前端关键改动是 <code>lib/tools.ts</code>、<code>app/api/create_itinerary/route.ts</code>、<code>lib/constants.ts</code>；后端对应 <code>app.py</code> 的 <code>plan_itinerary</code> 与 <code>/plan_itinerary</code>。工具循环仍由 <code>assistant.ts</code> 驱动，无需改动。</p>
+</blockquote>
+<h2>challenge4：新增实时语音模式</h2>
+<p>第四个关卡加入<strong>实时语音对话</strong>，走 OpenAI Realtime API + WebRTC，与文本聊天并行。</p>
+<ul>
+<li>前端新增 <code>components/voice-mode.tsx</code>：<code>startSession()</code> 先 <code>fetch(&#39;/api/session&#39;)</code> 拿 ephemeral token，再 <code>new RTCPeerConnection()</code> 建连接、<code>getUserMedia</code> 取麦克风、<code>createDataChannel(&#39;oai-events&#39;)</code>，按 token 将 SDP offer POST 到 <code>REALTIME_BASE_URL?model=REALTIME_MODEL</code>。</li>
+<li>前端 <code>app/api/session/route.ts</code> 是语音专属前置步骤：向 <code>https://api.openai.com/v1/realtime/sessions</code> POST，请求体 <code>{ model: REALTIME_MODEL, voice: VOICE }</code>，用 <code>process.env.OPENAI_API_KEY</code> 鉴权，把含 <code>client_secret</code> 的响应原样回传，浏览器侧用 <code>client_secret.value</code> 鉴权。</li>
+<li><code>lib/constants.ts</code> 新增 <code>REALTIME_MODEL</code>（<code>gpt-4o-realtime-preview</code>）、<code>REALTIME_BASE_URL</code>、<code>VOICE</code>（<code>coral</code>）、<code>REALTIME_PROMPT</code>。</li>
+<li>此时 data channel 的 <code>conversation.item.created</code> 处理器是<strong>空的</strong>（<code>const output = event</code> 但未使用），session.update 只发送 <code>instructions</code>，还不处理工具调用。</li>
+<li>python-backend <strong>没有对应变更</strong>：语音模式完全在前端直连 Realtime API 完成，Flask 后端只是文本/工具路径的替代实现。</li>
+</ul>
+<blockquote>
+<p>新增能力：<strong>实时语音</strong>。前端关键改动是 <code>components/voice-mode.tsx</code>、<code>app/api/session/route.ts</code>、<code>lib/constants.ts</code>；后端无对应路由。</p>
+</blockquote>
+<h2>challenge5：SSE 流式传输 + 语音内工具调用</h2>
+<p>第五个关卡是最终形态，同时演进文本与语音两条链路。</p>
+<ul>
+<li><strong>文本改流式</strong>：<code>app/api/get_response/route.ts</code> 改用 <code>openai.beta.chat.completions.stream</code> 并返回 <code>ReadableStream</code>，响应头 <code>Content-Type: text/event-stream</code>。它把 OpenAI 的增量重映射为三类 SSE 事件：<code>assistant_delta</code>（文本增量）、<code>function_arguments_delta</code>（工具参数增量）、<code>function_arguments_done</code>（<code>finishReason === &#39;tool_calls&#39;</code> 时携带完整参数）。</li>
+<li><code>lib/assistant.ts</code> 重构为 <code>handleTurn(messages, onMessage)</code> + <code>processMessages()</code>：用 <code>response.body.getReader()</code> 逐块读取 SSE，<code>TextDecoder</code> 按 <code>data: json</code> 行解析（支持 <code>[DONE]</code>），<code>partial-json</code> 的 <code>parse</code> 解析增量参数；完成工具调用后用 <code>role: &#39;tool&#39;</code> 消息回填并递归 <code>processMessages()</code>。</li>
+<li><strong>语音加工具</strong>：<code>components/voice-mode.tsx</code> 的 session.update 现在发送 <code>tools: REALTIME_TOOLS</code>（来自 <code>lib/constants.ts</code>，定义 <code>search_location</code> 简化版），data channel 收到 <code>conversation.item.created</code> 且 <code>type === &#39;function_call&#39;</code> 时调用 <code>handleToolCall</code>：把 <code>search_location</code> 转发到 <code>/api/search_location</code>，再用 <code>conversation.item.create</code> 发回 <code>function_call_output</code>，并强制 <code>response.create</code> 让模型基于结果继续回答。</li>
+<li>python-backend 仍无对应变更（与 challenge4 一致），因语音按 Realtime API 直接工作、文本流式由 Next.js 路由处理。</li>
+</ul>
+<blockquote>
+<p>新增能力：<strong>流式文本 + 语音内工具调用</strong>。前端关键改动是 <code>app/api/get_response/route.ts</code>、<code>lib/assistant.ts</code>、<code>components/voice-mode.tsx</code>、<code>lib/constants.ts</code>（<code>REALTIME_TOOLS</code>）。</p>
+</blockquote>
+<h2>前端 tools.ts 与后端 route 的配合机制</h2>
+<p><code>lib/tools.ts</code> 是整个工具链的<strong>契约中心</strong>，把&quot;模型能调什么&quot;和&quot;前端执行什么&quot;绑在一起：</p>
+<ul>
+<li><code>tools</code> 数组定义的函数 Schema <strong>原样传给 OpenAI API</strong>（在 <code>get_response</code> 路由里作为 <code>tools</code> 参数传入 <code>chat.completions.create</code>，或流式版本的 <code>openai.beta.chat.completions.stream</code> 的 <code>tools</code>）。模型据此决定何时、以何参数发起工具调用。</li>
+<li><code>handleTool(toolName, parameters)</code> 根据工具名<strong>分派到对应 API 路由</strong>：<code>search_location</code> → <code>fetch(&#39;/api/search_location&#39;)</code>，<code>plan_itinerary</code> → <code>fetch(&#39;/api/create_itinerary&#39;)</code>。工具名与前端的路由名是两个独立命名空间，<code>plan_itinerary</code> → <code>/api/create_itinerary</code> 就是这种映射点。</li>
+</ul>
+<div class="mermaid">sequenceDiagram
+    participant M as OpenAI 模型
+    participant R as get_response 路由
+    participant H as lib/tools.ts handleTool
+    participant S as search_location 路由
+    participant I as create_itinerary 路由
+    M-&gt;&gt;R: 请求补全（含 tools 定义）
+    R-&gt;&gt;M: assistant tool_calls（search_location / arguments）
+    R-&gt;&gt;H: handleTool(&quot;search_location&quot;, args)
+    H-&gt;&gt;S: fetch /api/search_location
+    S--&gt;&gt;H: organic_results
+    H--&gt;&gt;R: 结果以 role:&quot;tool&quot; 回填对话
+    R-&gt;&gt;M: 再次请求（模型基于结果作答）
+</div>
+<p><em>图：文本链路中 tools 定义传给 OpenAI，handleTool 按工具名分派到对应 API 路由的执行闭环。</em></p>
+<p>后端（Next.js 或 Flask）始终扮演<strong>代理</strong>：持有 <code>OPENAI_API_KEY</code> / <code>SERPAPI_API_KEY</code>，把前端请求转发到 OpenAI / SerpAPI，避免把密钥暴露给浏览器。文本对话复用 <code>get_response</code> 路径，工具调用由 <code>tools.ts</code> 驱动，实时语音只走 <code>/api/session</code> 与 WebRTC。</p>
+<h2>小结：每一步该看哪儿</h2>
+<table>
+<thead>
+<tr>
+<th>关卡</th>
+<th>新增能力</th>
+<th>前端关键文件</th>
+<th>python-backend 对应</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>starting_point</td>
+<td>固定回复</td>
+<td><code>app/api/get_response/route.ts</code></td>
+<td><code>app.py</code> <code>/get_response</code></td>
+</tr>
+<tr>
+<td>challenge1</td>
+<td>真实对话</td>
+<td><code>get_response</code> 路由调用 <code>chat.completions.create</code></td>
+<td><code>/get_response</code> 用 SDK</td>
+</tr>
+<tr>
+<td>challenge2</td>
+<td>搜索工具 + 工具循环</td>
+<td><code>lib/tools.ts</code>、<code>lib/assistant.ts</code>、<code>app/api/search_location/route.ts</code></td>
+<td><code>tools</code> + <code>/search_location</code></td>
+</tr>
+<tr>
+<td>challenge3</td>
+<td>o1 行程规划</td>
+<td><code>lib/tools.ts</code>、<code>app/api/create_itinerary/route.ts</code></td>
+<td><code>plan_itinerary</code> + <code>/plan_itinerary</code></td>
+</tr>
+<tr>
+<td>challenge4</td>
+<td>实时语音</td>
+<td><code>components/voice-mode.tsx</code>、<code>app/api/session/route.ts</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td>challenge5</td>
+<td>SSE 流式 + 语音工具</td>
+<td><code>get_response</code> 路由、<code>lib/assistant.ts</code>、<code>voice-mode.tsx</code></td>
+<td>无</td>
+</tr>
+</tbody></table>
+<p>掌握了这条进度条，就能在任意一个 challenge 文件夹里快速定位&quot;这一步代码应该长什么样&quot;以及它与前后关卡的关系。</p>
+</article><article class="wiki-doc" id="original-5-外部集成-openai-serpapi-realtime"><div class="doc-kicker">05 · ../integrations/external-apis.md</div><h1>外部集成（OpenAI / SerpAPI / Realtime）</h1>
+<p>本页汇总 Wanderlust Concierge 依赖的全部外部服务接口及其接入方式。前端（Next.js API 路由）与 Python（Flask）两套后端都会代理这些外部请求，把密钥留在服务端，避免暴露给浏览器。三个外部依赖分别是：</p>
+<ol>
+<li><strong>OpenAI Chat Completions</strong> —— 文本对话补全 + 工具调用；</li>
+<li><strong>OpenAI Realtime API</strong> —— 基于 WebRTC 的实时语音会话；</li>
+<li><strong>SerpAPI Google 搜索</strong> —— 地标 / 酒店的互联网搜索。</li>
+</ol>
+<p>这些服务都以 API 密钥鉴权，密钥从 <code>.env</code> 环境变量读取。下文分别说明每个服务的鉴权方式、请求示例、响应格式与典型错误场景，最后汇总 <code>.env</code> 配置方式。</p>
+<div class="mermaid">sequenceDiagram
+    participant UI as 前端组件
+    participant RT as Next.js API 路由 / Flask
+    participant AI as OpenAI
+    participant SR as SerpAPI
+
+    UI-&gt;&gt;RT: POST /api/get_response（文本消息）
+    RT-&gt;&gt;AI: chat.completions stream（Bearer OPENAI_API_KEY）
+    AI--&gt;&gt;RT: SSE 增量（含 tool_calls）
+    RT--&gt;&gt;UI: 代理 SSE 事件
+    UI-&gt;&gt;RT: POST /api/search_location（工具参数）
+    RT-&gt;&gt;SR: getJson / GoogleSearch（api_key=SERPAPI_API_KEY）
+    SR--&gt;&gt;RT: organic_results
+    RT--&gt;&gt;UI: 搜索结果 JSON
+
+    UI-&gt;&gt;RT: GET /api/session（语音模式）
+    RT-&gt;&gt;AI: POST /v1/realtime/sessions（Bearer OPENAI_API_KEY）
+    AI--&gt;&gt;RT: ephemeral client_secret
+    RT--&gt;&gt;UI: client_secret.value
+    UI-&gt;&gt;AI: WebRTC SDP 交换（Bearer client_secret + oai-events channel）
+</div>
+<p><em>图：三组外部请求——文本对话、SerpAPI 搜索、Realtime 语音的鉴权与数据流。</em></p>
+<h2>OpenAI Chat Completions</h2>
+<p>文本对话与行程规划都调用 OpenAI Chat Completions，但走两条不同的补全路径。</p>
+<h3>SDK 鉴权</h3>
+<p>前端与后端都通过 SDK 默认构造器读取 <code>OPENAI_API_KEY</code>，无需在代码里显式传密钥：</p>
+<ul>
+<li>前端 <code>app/api/get_response/route.ts</code> 与 <code>app/api/create_itinerary/route.ts</code>：<code>new OpenAI()</code>，由 openai npm 包默认读取 <code>process.env.OPENAI_API_KEY</code>。</li>
+<li>Python 后端 <code>app.py</code>：<code>client = OpenAI()</code>，由 openai Python SDK 默认读取环境里的 <code>OPENAI_API_KEY</code>（由顶部 <code>load_dotenv()</code> 从 <code>.env</code> 载入）。</li>
+</ul>
+<p>唯一显式使用该密钥的位置是 <code>/api/session</code> 路由——它在服务端拼出 <code>Authorization: Bearer ${process.env.OPENAI_API_KEY}</code> 头去换取 Realtime ephemeral token（见下文）。</p>
+<h3>流式对话：/api/get_response</h3>
+<p>前端 <code>app/api/get_response/route.ts</code> 使用 <code>openai.beta.chat.completions.stream({ model: &#39;gpt-4o&#39;, messages, tools })</code> 做<strong>流式</strong>补全，并把 OpenAI 增量 <code>delta</code> 重映射为三种 SSE 事件（<code>assistant_delta</code> / <code>function_arguments_delta</code> / <code>function_arguments_done</code>）下发给前端。底层 <code>openai</code> 包接受 <code>tools</code> 数组，使模型可以发起 <code>search_location</code> 与 <code>plan_itinerary</code> 工具调用，返回 <code>choices[0].message</code>（流式场景下为带 <code>delta.tool_calls</code> 的增量）。该路由用 <code>ReadableStream</code> 逐块 <code>controller.enqueue</code>，响应头为 <code>Content-Type: text/event-stream</code>、<code>Cache-Control: no-cache</code>、<code>Connection: keep-alive</code>。</p>
+<p>对应的 Flask 端点 <code>POST /get_response</code> 是<strong>非流式</strong>等价实现：<code>client.chat.completions.create({ model: &#39;gpt-4o&#39;, messages, tools })</code>，一次返回完整的 <code>completion.choices[0].message</code> JSON（其中可含 <code>tool_calls</code>）。两套实现对工具 schema、模型名保持一致。</p>
+<h3>非流式行程规划：/api/create_itinerary 与 /plan_itinerary</h3>
+<p><code>app/api/create_itinerary/route.ts</code> 与 Flask <code>POST /plan_itinerary</code> 使用 model <code>o1</code> 做非流式补全：<code>openai.chat.completions.create({ model: &#39;o1&#39;, messages: [system(ITINERARY_PROMPT), user(json.dumps(stops))] })</code>，返回 <code>{ itinerary: content }</code>。此处刻意选用推理模型 <code>o1</code> 而非对话模型的 <code>gpt-4o</code>，因为行程优化需要推理能力。</p>
+<h3>典型错误场景</h3>
+<ul>
+<li>缺少 <code>OPENAI_API_KEY</code>：openai SDK 构造或首次请求时抛出认证错误；各 route 用 try/catch 捕获并返回 <code>{ error: &lt;message&gt; }</code> + HTTP 500。</li>
+<li>网络错误 / 上游故障：<code>/api/get_response</code> 在流的 <code>start</code> 内部 catch，失败时 <code>controller.error(error)</code> 终止 SSE 流；外层 catch 返回 500 JSON。</li>
+<li>无效或过期密钥：上游返回 401，SDK 抛错，被同一 catch 捕获为 500。</li>
+</ul>
+<h2>OpenAI Realtime API（WebRTC 语音）</h2>
+<p>Realtime 集成是前置 <code>/api/session</code> 换取 <strong>ephemeral token</strong>，再在浏览器用该 token 通过 WebRTC 做 SDP 交换，并在 <code>oai-events</code> data channel 上收发事件。</p>
+<h3>换取短期 token：/api/session</h3>
+<p><code>GET /api/session</code>（<code>app/api/session/route.ts</code>）在服务端向 <code>https://api.openai.com/v1/realtime/sessions</code> 发起 <code>POST</code>，请求头用 <code>Authorization: Bearer ${process.env.OPENAI_API_KEY}</code>，请求体为 <code>{ model: &#39;gpt-4o-realtime-preview&#39;（REALTIME_MODEL）, voice: &#39;coral&#39;（VOICE） }</code>，并把响应体原样回传。该响应含 <code>client_secret</code>（短期有效 token），避免把长期密钥交给前端。</p>
+<h3>WebRTC 握手与音频：voice-mode.tsx</h3>
+<p>前端 <code>components/voice-mode.tsx</code> 的 <code>startSession</code> 流程：</p>
+<ol>
+<li><code>fetch(&#39;/api/session&#39;)</code> 取回 <code>client_secret.value</code> 与会话 <code>id</code>。</li>
+<li>新建 <code>RTCPeerConnection</code>，把 <code>navigator.mediaDevices.getUserMedia({ audio: true })</code> 采集的音频轨道 <code>addTrack</code> 进连接，并用 <code>pc.ontrack</code> 把远端音频接到 <code>&lt;audio&gt;</code> 元素播放。</li>
+<li><code>createOffer()</code> → <code>setLocalDescription(offer)</code>，把 <code>offer.sdp</code> POST 到 <code>https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview</code>（<code>REALTIME_BASE_URL</code> 拼模型参数），请求头 <code>Authorization: Bearer ${client_secret.value}</code>、<code>Content-Type: application/sdp</code>；把返回的 SDP 作为 answer <code>setRemoteDescription</code>。</li>
+</ol>
+<p>连接建立后：</p>
+<ul>
+<li><code>pc.createDataChannel(&#39;oai-events&#39;)</code> 传输事件；data channel <code>open</code> 时发送 <code>session.update</code>（<code>instructions</code> 用 <code>REALTIME_PROMPT</code>，<code>tools</code> 用 <code>REALTIME_TOOLS</code>），并把 <code>isSessionActive</code> 置真。</li>
+<li>收到模型发来的 <code>conversation.item.created</code> 且类型为 <code>function_call</code> 时，前端调用 <code>handleToolCall</code>：对 <code>search_location</code> 转发到 <code>/api/search_location</code>，再把输出作为 <code>conversation.item.create</code>（<code>type: &#39;function_call_output&#39;</code>）经 data channel 回传，随后 <code>response.create</code> 促使模型继续。</li>
+<li>挂断时 <code>stopSession</code> 关闭 data channel 与 peer connection，并停止本地音频轨道。</li>
+</ul>
+<h3>典型错误场景</h3>
+<ul>
+<li><code>/api/session</code> 失败（缺密钥 / 网络）：返回 <code>{ error }</code> + 500，语音模式拿不到 <code>client_secret</code> 无法继续。</li>
+<li>SDP 交换失败 / token 过期：<code>setRemoteDescription</code> 或 fetch 抛错，被 <code>startSession</code> 的 catch 记录，会话无法激活。</li>
+<li>data channel 未打开就发送事件：<code>sendClientEvent</code> 打印 &quot;Failed to send message - no data channel available&quot; 并丢弃。</li>
+</ul>
+<h2>SerpAPI Google 搜索</h2>
+<p>SerpAPI 负责 <code>search_location</code> 工具的互联网检索（地标、酒店等）。</p>
+<h3>鉴权与请求</h3>
+<p>前端 <code>app/api/search_location/route.ts</code> 用 <code>serpapi</code> 包的 <code>getJson</code>：</p>
+<pre><code>getJson({
+  engine: &#39;google&#39;,
+  q: search_query,
+  location: location,
+  api_key: SERPAPI_API_KEY,   // 来自 process.env
+  limit: 5
+})
+</code></pre>
+<p>返回对象取 <code>response.organic_results</code> 作为 JSON 响应。Python 后端 <code>app.py</code> 的 <code>/search_location</code> 使用同包等价的 <code>GoogleSearch(params).get_dict()</code>，<code>params</code> 字段完全一致（<code>engine</code>/<code>q</code>/<code>location</code>/<code>api_key</code>/<code>limit</code>），同样取 <code>results[&quot;organic_results&quot;]</code>。两端都固定 <code>engine: &#39;google&#39;</code> 与 <code>limit: 5</code>。</p>
+<p>前端 <code>lib/tools.ts</code> 的 <code>handleTool</code> 在模型发起 <code>search_location</code> 工具调用时转发到此路由；语音模式 <code>voice-mode.tsx</code> 收到 Realtime <code>function_call</code> 时也复用同一路由。</p>
+<h3>典型错误场景</h3>
+<ul>
+<li>缺少 <code>SERPAPI_API_KEY</code>：前端路由显式 <code>if (!serpApiKey) throw new Error(&#39;SERPAPI_API_KEY is not defined&#39;)</code>，被路由 catch 捕获返回 <code>{ error }</code> + 500；Flask 端点等价地 <code>raise ValueError(&#39;SERPAPI_API_KEY is not defined&#39;)</code>（Flask 默认返回 500 错误页而非 JSON）。</li>
+<li>网络 / 上游限流错误：<code>getJson</code> / <code>get_dict()</code> 抛错，同样被 catch 变为 500。</li>
+</ul>
+<h2>.env 密钥配置</h2>
+<p>密钥统一由环境变量提供，<code>process.env</code> 与 Flask 的 <code>load_dotenv()</code> 从 <code>.env</code> 读取；<code>.env</code> 文件本身被 <code>.gitignore</code> 忽略，仓库只提交 <code>.env.example</code> 模板。</p>
+<table>
+<thead>
+<tr>
+<th>变量</th>
+<th>用途</th>
+<th>消费位置</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td>Chat Completions 与 Realtime 鉴权</td>
+<td>openai SDK 自动读取（<code>/api/get_response</code>、<code>/api/create_itinerary</code>、Flask <code>client</code>）；<code>/api/session</code> 显式 <code>process.env</code> / Bearer 头</td>
+</tr>
+<tr>
+<td><code>SERPAPI_API_KEY</code></td>
+<td>SerpAPI Google 搜索</td>
+<td><code>/api/search_location</code> 读 <code>process.env</code>；Flask <code>/search_location</code> 读 <code>os.getenv</code></td>
+</tr>
+</tbody></table>
+<p>配置方式：</p>
+<ul>
+<li><strong>前端（Next.js）</strong>：<code>next.config.mjs</code> 当前为空默认配置，项目依赖 Next.js 默认约定自动读取 <code>.env</code> / <code>.env.local</code>；服务端 route 通过 <code>process.env.*</code> 访问。路由以这种方式承接 <code>OPENAI_API_KEY</code> 与 <code>SERPAPI_API_KEY</code>。</li>
+<li><strong>Python 后端</strong>：<code>app.py</code> 顶部 <code>from dotenv import load_dotenv; load_dotenv()</code> 从项目根目录 <code>.env</code> 自动加载；随后 <code>OpenAI()</code> 自动读取 <code>OPENAI_API_KEY</code>，<code>/search_location</code> 用 <code>os.getenv(&#39;SERPAPI_API_KEY&#39;)</code> 读取。</li>
+<li><strong>模板</strong>：<code>starting_point/python-backend/.env.example</code> 与 <code>challenge5/python-backend/.env.example</code> 均只列出 <code>OPENAI_API_KEY=&lt;your-openai-api-key&gt;</code>。<code>SERPAPI_API_KEY</code> 未出现在模板中，使用搜索功能前需手动补充该变量。</li>
+</ul>
+<h2>相关页面</h2>
+<ul>
+<li><a href="#original-1-next-js-api-路由与-python-后端对照">/openwiki/architecture/api-routes.md</a> — Next.js 路由与 Flask 后端的端点对照、SSE 事件与错误返回</li>
+<li><a href="#original-2-常量-配置与环境变量">/openwiki/architecture/constants-config.md</a> — 模型名、提示词、Realtime 配置常量的定义与消费位置</li>
+</ul>
+</article><article class="wiki-doc" id="original-6-仓库概述与结构"><div class="doc-kicker">06 · ../overview.md</div><h1>仓库概述与结构</h1>
+<p><code>openai-builder-lab</code> 是 OpenAI 官方的 <strong>Builder Lab 起步项目</strong>，用于教学如何用 OpenAI 的 <strong>Chat Completions、函数调用（tool calling）、Realtime API</strong> 构建一个旅行助手应用。它的目标产品是一个名为 <strong>Wanderlust Concierge</strong> 的 AI 旅行助手：既能进行文本对话（推荐目的地、活动、住宿），也能实时语音交谈，并能调用外部搜索工具查询地标/酒店、用推理模型规划行程。整个仓库是分步教程——从 <code>starting_point</code> 骨架出发，每完成一个 <code>challengeN</code> 就叠加上一层能力，直到 <code>challenge5</code> 成为完整可运行的最终形态。</p>
+<p>仓库采用<strong>一份代码、两种后端</strong>的结构：每个挑战目录下既有 Next.js 前端（含内建 API 路由），也有一个等价的 Python Flask 后端。读者可以根据自己更熟悉的语言，二选一调用后端来完成同一个挑战。</p>
+<h2>顶层目录结构</h2>
+<p>仓库顶层由五个主要部分构成：</p>
+<ul>
+<li><strong><code>starting_point/</code></strong> —— 起点骨架。<code>frontend/</code> 是一个完整的 Next.js 应用（含 <code>app/</code>、<code>components/</code>、<code>lib/</code>、<code>stores/</code>、<code>public/</code> 等），<code>python-backend/</code> 是等价的 Flask 起步后端。这里的 <code>/get_response</code> 后端只返回硬编码的固定文案，不含任何真实 AI 能力，是读者动手的第一站。</li>
+<li><strong><code>challenge1/</code> 至 <code>challenge5/</code></strong> —— 依次增加功能的五个关卡。每个目录结构都与 <code>starting_point</code> 平行（各自有独立的 <code>frontend/</code> 与 <code>python-backend/</code>），既是&quot;进展快照&quot;又是&quot;参考答案&quot;：前一关完成后得到的代码，就等于下一关文件夹里的内容。</li>
+<li><strong><code>skills/</code></strong> —— OpenWiki 技能（如 mermaid 图表、写入 connector 的指导）。</li>
+<li><strong><code>.github/</code></strong> —— GitHub Actions workflow（<code>openwiki-update.yml</code>），按计划自动运行 <code>openwiki code --update</code> 刷新本 wiki。</li>
+<li><strong><code>/openwiki/</code></strong> —— 本 wiki 的页面（不在仓库技术实现内，由 OpenWiki 工具维护）。</li>
+</ul>
+<div class="mermaid">flowchart TD
+    Root[&quot;openai-builder-lab 仓库根&quot;]
+    Root --&gt; SP[&quot;starting_point/ 起点骨架&quot;]
+    Root --&gt; C1[&quot;challenge1/ 真实模型对话&quot;]
+    Root --&gt; C2[&quot;challenge2/ search_location 工具&quot;]
+    Root --&gt; C3[&quot;challenge3/ plan_itinerary 推理规划&quot;]
+    Root --&gt; C4[&quot;challenge4/ 实时语音 Realtime API&quot;]
+    Root --&gt; C5[&quot;challenge5/ SSE 流式 + 语音工具&quot;]
+    Root --&gt; SK[&quot;skills/ OpenWiki 技能&quot;]
+    Root --&gt; GH[&quot;.github/ GitHub Actions&quot;]
+    Root --&gt; OW[&quot;openwiki/ 本 wiki&quot;]
+
+    SP --&gt; C1 --&gt; C2 --&gt; C3 --&gt; C4 --&gt; C5
+</div>
+<p><em>图：仓库顶层目录层级。各 challenge 串成一条严格递增的能力链，每一关都建立在上一关完整实现之上。</em></p>
+<p>每个 <code>challengeN</code> 目录内部都是同构的：</p>
+<div class="mermaid">flowchart LR
+    CH[&quot;challengeN/&quot;] --&gt; FE[&quot;frontend/ (Next.js)&quot;]
+    CH --&gt; PB[&quot;python-backend/ (Flask)&quot;]
+    FE --&gt; FEAPI[&quot;app/api/ 内建 API 路由&quot;]
+    FE --&gt; FELIB[&quot;components/ + lib/ + stores/&quot;]
+    PB --&gt; PBA[&quot;app.py 同一组路由&quot;]
+</div>
+<p><em>图：单个 challenge 的内部结构。<code>frontend/</code> 与 <code>python-backend/</code> 提供功能对等的两套后端实现。</em></p>
+<h2>各 challenge 的迭代递进关系</h2>
+<p>整个教程围绕同一旅行助手，沿五级能力台阶推进；每一关都独立可运行，前一关是后一关的依赖：</p>
+<table>
+<thead>
+<tr>
+<th>关卡</th>
+<th>新增能力</th>
+<th>关键能力点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>starting_point</strong></td>
+<td>后端返回固定消息</td>
+<td><code>/get_response</code> 只 sleep 后返回占位文案，<code>tools.ts</code> 是空壳</td>
+</tr>
+<tr>
+<td><strong>challenge1</strong></td>
+<td>OpenAI Chat Completions 真实对话</td>
+<td><code>get_response</code> 路由用 <code>chat.completions.create</code> 调 <code>gpt-4o</code></td>
+</tr>
+<tr>
+<td><strong>challenge2</strong></td>
+<td>函数调用 + 工具循环</td>
+<td>新增 <code>search_location</code> 工具（SerpAPI 搜索），<code>assistant.ts</code> 递归回填工具结果</td>
+</tr>
+<tr>
+<td><strong>challenge3</strong></td>
+<td>推理规划</td>
+<td>新增 <code>plan_itinerary</code> 工具，用 <code>o1</code> 模型 + <code>ITINERARY_PROMPT</code> 排行程</td>
+</tr>
+<tr>
+<td><strong>challenge4</strong></td>
+<td>实时语音</td>
+<td><code>voice-mode.tsx</code> + <code>/api/session</code>，走 Realtime API + WebRTC</td>
+</tr>
+<tr>
+<td><strong>challenge5</strong></td>
+<td>SSE 流式 + 语音内工具调用</td>
+<td>文本改流式（<code>text/event-stream</code> + <code>partial-json</code>），语音也能调用搜索工具</td>
+</tr>
+</tbody></table>
+<p>每一关的 Python 后端都镜像前端后端的同一步骤（详见 <code>/openwiki/concepts/challenges.md</code> 的逐级文件对照表）。需要注意的是：<strong>voice 模式（challenge4/5）完全在前端直连 Realtime API 完成，Python 后端没有对应路由</strong>——Flask 后端只覆盖文本与工具路径。</p>
+<h2>前端实现：Next.js 14 + React 18 + TypeScript</h2>
+<p>所有挑战的 <code>frontend/</code> 都是同一个 <strong>Next.js 14（App Router）+ React 18 + TypeScript</strong> 应用模板（<code>package.json</code> 的 <code>name</code> 均为 <code>convex</code>，版本均锁定 <code>next@14.2.11</code>、<code>react@^18</code>）。前端组织方式固定为四层：</p>
+<ul>
+<li><strong><code>app/</code></strong> —— 页面与 API 路由。<code>page.tsx</code> 渲染唯一的 <code>&lt;Assistant /&gt;</code>；<code>app/api/</code> 下存放后端路由（如 <code>get_response</code>、<code>search_location</code>、<code>create_itinerary</code>、<code>session</code>）。</li>
+<li><strong><code>components/</code></strong> —— UI 组件（<code>Assistant</code>、<code>Chat</code>、<code>Message</code>、<code>ToolCall</code>，challenge4+ 增加 <code>VoiceMode</code>，challenge5 另有 <code>ui/</code> 原子套件）。</li>
+<li><strong><code>lib/</code></strong> —— 业务逻辑：<code>constants.ts</code>（系统 prompt、初始消息、模型名）、<code>tools.ts</code>（工具 Schema 与 <code>handleTool</code> 分派）、<code>assistant.ts</code>（对话/流式处理）、<code>utils.ts</code>。</li>
+<li><strong><code>stores/</code></strong> —— <code>useConversationStore</code>，基于 <strong>zustand</strong> 的会话状态管理。</li>
+</ul>
+<p><strong>状态管理用 zustand</strong>：<code>useConversationStore</code> 维护两个平行数组——<code>chatMessages</code>（驱动 UI 的条目）与 <code>conversationItems</code>（发给 Chat Completions API 的消息结构），并提供 <code>set</code>/<code>add</code> 系列原子动作。<strong>样式用 Tailwind CSS</strong>：<code>tailwind.config.ts</code> 声明了基于 CSS 变量的 shadcn 风格主题（<code>background</code>、<code>foreground</code>、<code>chart</code> 等色板），<code>globals.css</code> 提供对应变量。复杂推理/流式流程由 <code>lib/assistant.ts</code> 通过 <code>useConversationStore.getState()</code> 读取快照并把两个数组同步更新。</p>
+<h2>共用核心依赖</h2>
+<p>各 challenge 的 <code>frontend/package.json</code> 依赖高度一致，是支撑整条教程的&quot;核心工具包&quot;：</p>
+<ul>
+<li><strong><code>openai</code></strong>（^4.61.0）—— 调用 OpenAI Chat Completions / Realtime API 的官方 SDK。</li>
+<li><strong><code>next</code></strong>（14.2.11）+ <strong><code>react</code></strong> / <strong><code>react-dom</code></strong>（^18）—— 前端框架。</li>
+<li><strong><code>zustand</code></strong>（^5.0.2）—— 会话状态管理。</li>
+<li><strong><code>serpapi</code></strong>（^2.1.0，challenge2+）—— <code>search_location</code> 工具用的外部搜索客户端（对应 Python 端的 <code>google_search_results</code>）。</li>
+<li><strong><code>partial-json</code></strong>（^0.1.7）—— challenge5 流式模式下解析工具参数的增量 JSON。</li>
+<li><strong><code>recharts</code></strong>（^2.12.7）—— 图表库（<code>ui/chart.tsx</code> 基于它，作为预留扩展点）。</li>
+<li><strong><code>react-markdown</code></strong> / <strong><code>react-syntax-highlighter</code></strong> —— 渲染模型回复与工具参数 JSON。</li>
+<li><strong><code>lucide-react</code></strong>、<strong><code>@xyflow/react</code></strong>、<strong><code>vaul</code></strong>、<strong><code>zod</code></strong>、<strong><code>class-variance-authority</code></strong>、<strong><code>clsx</code></strong>、<strong><code>tailwind-merge</code></strong> 等 —— UI/工具杂项。</li>
+</ul>
+<p>开发依赖统一为 <code>typescript@^5.6.2</code>、<code>tailwindcss@^3.4.1</code> 与 eslint。</p>
+<h2>两种后端实现方式（二选一）</h2>
+<p>README 明确了双后端的设计：<strong>前端通过 <code>/api/</code> 路由（Next.js 内建 API）或 <code>http://localhost:8000</code>（Python Flask 后端）二选一</strong>调用后端。<code>lib/assistant.ts</code> 里就有切换点——当前默认用前端路由，注释里给出了切换到 Python 后端的写法：</p>
+<pre><code class="language-ts">// To use the python backend, replace by
+//const response = await fetch(&#39;http://localhost:8000/get_response&#39;, {
+const response = await fetch(&#39;/api/get_response&#39;, {
+  method: &#39;POST&#39;,
+  // ...
+})
+</code></pre>
+<p>两条路径实现同一组路由，功能对等：</p>
+<ul>
+<li><strong>Next.js 内建 API</strong>：<code>frontend/app/api/*/route.ts</code>。例如 <code>get_response/route.ts</code> 用 <code>openai.chat.completions.create</code> 转发对话请求——见 <code>challenge1/frontend/app/api/get_response/route.ts</code>、<code>challenge5/frontend/app/api/get_response/route.ts</code>。</li>
+<li><strong>Python Flask 后端</strong>：<code>python-backend/app.py</code>。用 Flask 暴露同名路由（<code>/get_response</code>、<code>/search_location</code>、<code>/plan_itinerary</code>），通过 <code>client.chat.completions.create</code> 与 <code>GoogleSearch</code>（serpapi）实现等价逻辑，<code>app.run(debug=True, port=8000)</code> 监听 8000 端口——见 <code>challenge5/python-backend/app.py</code>。</li>
+</ul>
+<p>无论选择哪种，<strong>后端始终扮演代理角色</strong>：持有 <code>OPENAI_API_KEY</code> / <code>SERPAPI_API_KEY</code>，把前端请求转发到 OpenAI / SerpAPI，避免把密钥暴露给浏览器。运行 Python 后端前需 <code>pip install -r requirements.txt</code>，并在 <code>.env</code> 中配置 <code>OPENAI_API_KEY</code>（以及使用搜索时所需的 <code>SERPAPI_API_KEY</code>）。</p>
+<h2>如何从源码验证每层功能</h2>
+<p>沿&quot;由外向里&quot;的路径即可逐层验证每个挑战的实际行为：</p>
+<ol>
+<li><strong>后端行为</strong>：直接看 <code>app/api/*/route.ts</code>（Next.js 版）或 <code>python-backend/app.py</code>（Flask 版）。例如 challenge1 的 <code>get_response</code> 路由里 <code>openai.chat.completions.create</code> 是否被调用、challenge2 的 <code>tools</code> 数组是否存在 <code>search_location</code>。</li>
+<li><strong>工具契约</strong>：<code>lib/tools.ts</code> 的 <code>tools</code> 数组定义了模型可用的函数 Schema，<code>handleTool</code> 按工具名分派到对应 API 路由（<code>search_location</code> → <code>/api/search_location</code>，<code>plan_itinerary</code> → <code>/api/create_itinerary</code>）。</li>
+<li><strong>对话流程</strong>：<code>lib/assistant.ts</code> 的 <code>handleTurn</code> / <code>processMessages</code> 把用户输入、工具调用、流式增量组装成完整的多轮对话（详见 <code>/openwiki/architecture/frontend-components.md</code> 与 <code>challenges.md</code>）。</li>
+<li><strong>状态</strong>：<code>stores/useConversationStore.ts</code> 展示 UI 条目与 API 消息两个数组如何被并行维护。</li>
+<li><strong>运行</strong>：在任一 <code>challengeN/frontend</code> 下 <code>npm install &amp;&amp; npm run dev</code>，或 <code>cd python-backend &amp;&amp; pip install -r requirements.txt &amp;&amp; python app.py</code>，即可体验该关卡的完整能力。</li>
+</ol>
+<p>开始改代码前，建议先对照 <code>/openwiki/concepts/challenges.md</code> 的&quot;每一步该看哪儿&quot;表格，锁定当前关卡前后端各改动了哪个文件。</p>
+<h2>相关页面</h2>
+<ul>
+<li><code>/openwiki/concepts/challenges.md</code> —— 五个挑战的逐级能力、关键文件对照与依赖关系</li>
+<li><code>/openwiki/architecture/frontend-components.md</code> —— 前端组件树与 zustand 状态管理</li>
+<li><code>/openwiki/architecture/api-routes.md</code> —— 各 API 路由与后端代理的细节</li>
+<li><code>/openwiki/architecture/constants-config.md</code> —— 常量与配置（system prompt、模型、Realtime 参数）</li>
+<li><code>/openwiki/integrations/external-apis.md</code> —— SerpAPI、Realtime API 等外部集成的详细说明</li>
+</ul>
+</article><article class="wiki-doc" id="original-7-快速开始"><div class="doc-kicker">07 · ../quickstart.md</div><h1>快速开始</h1>
+<p>本页是这个 Wiki 的入口。<code>openai-builder-lab</code> 是 OpenAI 官方的 <strong>Builder Lab 教程型代码仓库</strong>（travel-assistant 项目），目标是教会读者用 OpenAI 的 <strong>Chat Completions、函数调用（tool calling）与 Realtime API</strong> 从零构建一个名为 <strong>Wanderlust Concierge</strong> 的 AI 旅行助手——既能文本对话（推荐目的地、活动、住宿）、也能实时语音交谈，并能调用外部搜索工具查询地标/酒店、用推理模型规划行程。</p>
+<p>这是一个<strong>分步教程仓库</strong>：仓库顶层由 <code>starting_point</code> 与 <code>challenge1</code>-<code>challenge5</code> 等目录组成，每个 <code>challengeN</code> 都是<strong>迭代式学习关卡</strong>，逐步在上一关实现之上叠加新能力，直到 <code>challenge5</code> 成为完整可运行的最终形态。每一关目录下同时提供 <strong>Next.js 内建 API</strong> 与 <strong>Python Flask</strong> 两套等价的后端，读者可二选一。</p>
+<blockquote>
+<p>想先看代码怎么跑起来？可参照仓库 <code>README.md</code> 的步骤：克隆仓库后 <code>cd starting_point/frontend</code>，配置 <code>OPENAI_API_KEY</code>，<code>npm install &amp;&amp; npm run dev</code> 即可。（可选）进入 <code>python-backend</code> 执行 <code>pip install -r requirements.txt &amp;&amp; python app.py</code> 运行 Flask 后端。</p>
+</blockquote>
+<h2>这个仓库是什么</h2>
+<ul>
+<li><strong>用途</strong>：一份用于<strong>学习</strong>如何用 OpenAI API 构建 AI 助手的起步项目（Builder Lab）。它不是一个生产应用，而是一套带&quot;参考答案&quot;的教程。</li>
+<li><strong>目标产品</strong>：旅行助手 Wanderlust Concierge（文本对话 + 实时语音 + 搜索工具 + 行程规划）。</li>
+<li><strong>组织形式</strong>：从 <code>starting_point</code> 骨架出发，<code>challenge1</code>-<code>challenge5</code> 依次递进；每完成一关得到的代码即等于下一关文件夹内容。</li>
+<li><strong>双后端</strong>：前端通过 <code>/api/</code>（Next.js 内建路由）或 <code>http://localhost:8000</code>（Flask）二选一调用后端，二者功能对等；所有外部 API 密钥都留在服务端，由后端代理。</li>
+</ul>
+<h2>浏览器 Wiki 页面树</h2>
+<p>本 Wiki 围绕仓库的几大主题组织，从入口页出发可按需要深入：</p>
+<div class="mermaid">flowchart TD
+    Home[&quot;/openwiki/quickstart.md 快速开始（本页）&quot;]
+    Home --&gt; OV[&quot;/openwiki/overview.md 仓库概述与结构&quot;]
+    Home --&gt; CH[&quot;/openwiki/concepts/challenges.md 挑战关卡逐级解析&quot;]
+    OV --&gt; AC[&quot;/openwiki/architecture/ 架构域&quot;]
+    AC --&gt; AR[&quot;api-routes.md 前后端 API 对照&quot;]
+    AC --&gt; CC[&quot;constants-config.md 常量与配置&quot;]
+    AC --&gt; FC[&quot;frontend-components.md 组件与状态管理&quot;]
+    CH --&gt; WF[&quot;/openwiki/workflows/ 流程域&quot;]
+    WF --&gt; CT[&quot;chat-turn.md 聊天回合流程&quot;]
+    WF --&gt; TC[&quot;tool-calling.md 工具调用流程&quot;]
+    WF --&gt; ST[&quot;streaming.md 流式响应 SSE&quot;]
+    WF --&gt; RV[&quot;realtime-voice.md 实时语音模式&quot;]
+    Home --&gt; INT[&quot;/openwiki/integrations/external-apis.md 外部集成&quot;]
+</div>
+<p><em>图：Wiki 页面树——从入口页路由到仓库概述、挑战关卡，再由二者细分为架构、流程与外部集成三个子域。</em></p>
+<h2>主要页面速览</h2>
+<ul>
+<li><strong>仓库概述与结构</strong>（<code>/openwiki/overview.md</code>）—— 顶层目录与两套后端的整体说明，看这里最省力。</li>
+<li><strong>挑战关卡逐级解析</strong>（<code>/openwiki/concepts/challenges.md</code>）—— 从 starting_point 到 challenge5 的每一关新增能力与关键文件对照表。</li>
+<li><strong>核心执行流程</strong>（<code>/openwiki/workflows/</code>）——<ul>
+<li>聊天回合（<code>chat-turn.md</code>）：用户输入到助手回复的完整数据流。</li>
+<li>函数调用（<code>tool-calling.md</code>）：模型如何触发、执行并回填工具结果的循环。</li>
+<li>流式响应（<code>streaming.md</code>）：challenge5 的 SSE 事件协议与增量解析。</li>
+<li>实时语音（<code>realtime-voice.md</code>）：Realtime API + WebRTC 的语音链路。</li>
+</ul>
+</li>
+<li><strong>API 路由</strong>（<code>/openwiki/architecture/api-routes.md</code>）—— Next.js 内建 API 与 Python Flask 的等价实现对照。</li>
+<li><strong>集成</strong>（<code>/openwiki/integrations/external-apis.md</code>）—— OpenAI / SerpAPI / Realtime 的鉴权、请求方式与 .env 配置。</li>
+<li><strong>前端与状态</strong>（<code>/openwiki/architecture/frontend-components.md</code>）—— React 组件树与 zustand 会话状态管理。</li>
+<li><strong>常量与配置</strong>（<code>/openwiki/architecture/constants-config.md</code>）—— 模型、提示词、Realtime 参数与环境变量。</li>
+</ul>
+<h2>推荐浏览路径</h2>
+<ul>
+<li><strong>第一次接触</strong>：先读 <code>/openwiki/overview.md</code> 了解仓库全貌，再看 <code>/openwiki/concepts/challenges.md</code> 把握五关进度条。</li>
+<li><strong>想理解某条功能链路</strong>：从 <code>/openwiki/workflows/</code> 下的聊天回合、工具调用、流式或语音四篇入手。</li>
+<li><strong>想对比前后端实现</strong>：直接进 <code>/openwiki/architecture/api-routes.md</code> 与 <code>/openwiki/integrations/external-apis.md</code>。</li>
+<li><strong>想调整参数或换模型</strong>：看 <code>/openwiki/architecture/constants-config.md</code>。</li>
+</ul>
+<p>开始动手改代码前，建议先对照 <code>/openwiki/concepts/challenges.md</code> 的&quot;每一步该看哪儿&quot;表格，锁定当前关卡前后端各改动了哪个文件。</p>
+</article><article class="wiki-doc" id="original-8-聊天对话执行流程"><div class="doc-kicker">08 · ../workflows/chat-turn.md</div><h1>聊天对话执行流程</h1>
+<p>本文档梳理文本聊天从用户输入到助手回复的<strong>单次完整回合</strong>的数据流。整个链路跨越四个层：React 组件（<code>Assistant</code>）、zustand 状态存储（<code>useConversationStore</code>）、业务逻辑（<code>lib/assistant.ts</code>）与后端路由（<code>app/api/get_response/route.ts</code>）。仓库中 challenge1-3 与 challenge5 对&quot;一回合约&quot;的建模方式截然不同：前者是<strong>一次请求-响应式、非流式</strong>，后者是 <strong>SSE 流式、逐事件增量处理</strong>。本文以 challenge5 的最终形态为主线，并与 challenge1-3 的非流式版本对比。</p>
+<h2>一条回合的执行主干</h2>
+<p>challenge5 下，单次文本回合的完整时序如下：</p>
+<div class="mermaid">sequenceDiagram
+    participant U as 用户
+    participant C as Chat 组件
+    participant A as Assistant.handleSendMessage
+    participant S as useConversationStore
+    participant L as lib/assistant processMessages/handleTurn
+    participant R as /api/get_response 路由
+    participant O as OpenAI 流
+
+    U-&gt;&gt;C: 输入文本并回车/点发送
+    C-&gt;&gt;A: onSendMessage(message)
+    A-&gt;&gt;A: if (!message.trim()) return 空消息跳过
+    A-&gt;&gt;S: addConversationItem(userMessage)
+    A-&gt;&gt;S: addChatMessage(userItem)
+    A-&gt;&gt;L: processMessages()
+    L-&gt;&gt;L: 组装 [system(SYSTEM_PROMPT), ...conversationItems]
+    L-&gt;&gt;R: POST /api/get_response { messages }
+    R-&gt;&gt;O: openai.beta.chat.completions.stream({ messages, tools })
+    O--&gt;&gt;R: 增量事件
+    R--&gt;&gt;L: SSE 流 data: 事件
+    loop 逐事件
+        L-&gt;&gt;L: 解析事件并回调 onMessage
+        alt assistant_delta
+            L-&gt;&gt;S: 追加/更新 assistant 气泡与 conversationItems
+        else function_arguments_delta
+            L-&gt;&gt;S: 累积参数并更新 function_call 气泡
+        else function_arguments_done
+            L-&gt;&gt;L: handleTool 执行工具，写回 role:&quot;tool&quot;
+            L-&gt;&gt;L: 递归 processMessages() 再开一轮
+        end
+    end
+    L--&gt;&gt;A: 回合结束
+    A--&gt;&gt;C: 状态变更驱动重渲染
+    C--&gt;&gt;U: 滚动到底部展示消息
+</div>
+<p><em>图：challenge5 一条文本回合的完整时序——用户输入入库后，processMessages 组装消息数组发给后端，后端以 SSE 流回推事件，前端逐事件原地更新 store 与 UI。</em></p>
+<h2>入口：Assistant.handleSendMessage</h2>
+<p>入口是 <code>components/assistant.tsx</code> 中 <code>Assistant</code> 组件的 <code>handleSendMessage</code>。它接收尚未清洗的原始 <code>message</code> 字符串，做四件事：</p>
+<ol>
+<li><strong>空消息守卫</strong>：<code>if (!message.trim()) return</code> —— 只含空白或空字符串的输入被直接跳过，不写入 store，也不触发后端请求（见 <code>challenge5/frontend/components/assistant.tsx#L12-L13</code>）。</li>
+<li><strong>构造双份消息结构</strong>：把 <code>message.trim()</code> 同时构造成一个 <code>Item</code>（<code>{ type: &#39;message&#39;, role: &#39;user&#39;, content }</code>，用于 UI 渲染）和一个 <code>ChatCompletionMessageParam</code>（<code>{ role: &#39;user&#39;, content }</code>，用于发给 Chat Completions API）。二者是同一用户输入的两种表示，分别写入 store 的 <code>chatMessages</code> 与 <code>conversationItems</code>。</li>
+<li><strong>写入 store</strong>：先 <code>addConversationItem(userMessage)</code> 再加入 <code>addChatMessage(userItem)</code>，保证两个平行数组并行更新。</li>
+<li><strong>触发推理</strong>：<code>await processMessages()</code> 启动流式回合（包裹在 <code>try/catch</code> 中，失败 <code>console.error</code>）。</li>
+</ol>
+<p>与 challenge1-3 的差异在于：早期版本 <code>Assistant</code> 用一个本地 <code>loading</code> 状态控制 <code>Chat</code> 的加载动画，<code>finally</code> 中 <code>setLoading(false)</code>；challenge5 删掉了 <code>loading</code>，改为调用 <code>processMessages()</code>，靠流式事件驱动的重渲染完成 UI 更新。此外 challenge1 的 <code>handleTurn</code> 无需传参（内部从 store 取快照），而 challenge5 的 <code>handleTurn(messages, onMessage)</code> 由 <code>processMessages</code> 显式传入消息数组与事件回调。</p>
+<h2>状态存储的双数组模型</h2>
+<p><code>stores/useConversationStore.ts</code>（starting_point 与 challenge5 实现一致）用 zustand <code>create</code> 维护两个互相独立的数组：</p>
+<ul>
+<li><strong><code>chatMessages: Item[]</code></strong> —— 用户可见的聊天条目（<code>MessageItem | FunctionCallItem</code>），驱动 <code>Chat</code>/<code>Message</code>/<code>ToolCall</code> 渲染，初始为一条 assistant 的 <code>INITIAL_MESSAGE</code>。</li>
+<li><strong><code>conversationItems: ChatCompletionMessageParam[]</code></strong> —— 发给 Chat Completions API 的消息结构（含 <code>role</code>、<code>content</code>、<code>tool_calls</code>、工具输出），初始为空。</li>
+</ul>
+<p>Store 暴露整体替换（<code>setChatMessages</code>/<code>setConversationItems</code>）与单条追加（<code>addChatMessage</code>/<code>addConversationItem</code>）两类动作。推理逻辑通过 <code>useConversationStore.getState()</code> 读取当前快照（而非 React 闭包里的过期值），并在整个回合里对两个数组做同步更新。这条并行一致性约定贯穿整个回合：用户输入同时追加到两者，流式回复时两者同步累积，工具结果也同时反映到两者。</p>
+<h2>handleTurn：构造消息数组并发起 SSE 请求</h2>
+<p><code>lib/assistant.ts</code> 的 <code>handleTurn(messages, onMessage)</code> 负责网络层：</p>
+<ul>
+<li><strong>消息数组的拼接</strong>：<code>processMessages</code> 先把 <code>SYSTEM_PROMPT</code>（来自 <code>lib/constants.ts</code> 的旅行助手系统提示词）作为第一条 <code>{ role: &#39;system&#39; }</code> 消息，展开 <code>conversationItems</code> 追加其后，构成 <code>[system, ...conversationItems]</code> 的完整消息数组，再传给 <code>handleTurn</code>，最终作为 <code>{ messages }</code> 的请求体 POST 给 <code>/api/get_response</code>。</li>
+<li><strong>发起请求</strong>：<code>fetch(&#39;/api/get_response&#39;, { method: &#39;POST&#39;, headers: { &#39;Content-Type&#39;: &#39;application/json&#39; }, body: JSON.stringify({ messages }) })</code>。旁边保留注释的 <code>http://localhost:8000/get_response</code> 备选，用于切换 Flask 后端。</li>
+<li><strong>非流式前身（challenge1-3）</strong>：早期 <code>handleTurn</code> 直接 <code>fetch</code> 后 <code>await response.json()</code> 拿到<strong>完整的一条</strong> assistant <code>MessageItem</code>，一次性 <code>push</code> 进 <code>chatMessages</code> 与 <code>conversationItems</code>，无逐块读取。challenge5 改为 <code>response.body!.getReader()</code> 读取 <code>ReadableStream</code>，配合 <code>TextDecoder</code> 逐块解码、按 <code>\n\n</code> 切分 SSE 帧，提取 <code>data: </code> 前缀后的 JSON 再回调 <code>onMessage(data)</code>。</li>
+</ul>
+<p>后端路由 <code>app/api/get_response/route.ts</code> 收到 <code>{ messages }</code> 后，用 <code>openai.beta.chat.completions.stream({ model: &#39;gpt-4o&#39;, messages, tools })</code> 发起流式补全，把 OpenAI 的增量事件<strong>重映射</strong>为三种前端可消费的 SSE 事件，每条编码为 <code>data: &lt;json&gt;\n\n</code>，并通过 <code>ReadableStream</code> 返回（响应头 <code>Content-Type: text/event-stream</code>、<code>Cache-Control: no-cache</code>、<code>Connection: keep-alive</code>）：</p>
+<ul>
+<li><strong><code>assistant_delta</code></strong> —— <code>delta.content</code> 的普通文本增量；</li>
+<li><strong><code>function_arguments_delta</code></strong> —— <code>delta.tool_calls[0]</code> 的增量参数，携带 <code>callId</code>、<code>name</code>、当块 <code>arguments</code>；</li>
+<li><strong><code>function_arguments_done</code></strong> —— 当 <code>finishReason === &#39;tool_calls&#39;</code> 且正处于收集状态时发送，携带<strong>累积完整的</strong> <code>arguments</code>，随后路由重置内部累积状态。</li>
+</ul>
+<p>流结束时直接 <code>controller.close()</code>；<code>[DONE]</code> 是前端解析的终止信号（路由本身并不发送 <code>[DONE]</code>，是 OpenAI SDK 流迭代完即自然关闭）。请求体里的 <code>tools</code>（来自 <code>lib/tools.ts</code> 的 <code>search_location</code> 与 <code>plan_itinerary</code> 两个函数 Schema）作为 OpenAI 工具传给模型，模型据此决定何时发起工具调用。</p>
+<h2>processMessages：按事件类型增量更新</h2>
+<p><code>processMessages()</code> 是 challenge5 重构出来的<strong>回合编排器</strong>。它先从 store 取当前快照，组装含 SYSTEM_PROMPT 的完整消息数组，调用 <code>handleTurn</code>，并在 <code>onMessage</code> 回调里按 <code>event</code> 类型分派增量更新。三个事件分支各自维护一组局部累积变量（<code>assistantMessageContent</code>、<code>functionArguments</code>）：</p>
+<p><strong>assistant_delta（文本打字机）</strong></p>
+<ul>
+<li>累加 <code>assistantMessageContent += data.content</code>。</li>
+<li>若 <code>chatMessages</code> 末尾是 assistant 的 <code>message</code>，则就地 <code>content = assistantMessageContent</code>（产生逐字追加的打字机效果）；否则 push 一条新的 assistant <code>message</code>。之后调用 <code>setChatMessages([...chatMessages])</code>（新数组引用触发 zustand 订阅与 React 重渲染），再对 <code>conversationItems</code> 做相同处理（末尾 assistant 消息就地更新，否则 push）。</li>
+</ul>
+<p><strong>function_arguments_delta（工具参数实时累积）</strong></p>
+<ul>
+<li>累加 <code>functionArguments += data.arguments</code>，并用 <code>partial-json</code> 的 <code>parse</code> 生成 <code>parsedFunctionArguments</code>（允许参数 JSON 尚未完整时容错解析）。</li>
+<li>若 <code>chatMessages</code> 末尾是同一 <code>callId</code> 的 <code>function_call</code>，则就地更新其 <code>arguments</code>/<code>parsedArguments</code>；否则 push 一条 <code>status: &#39;in_progress&#39;</code> 的新 <code>function_call</code>。</li>
+<li>对 <code>conversationItems</code> 同步累积 <code>tool_calls[0].function.arguments</code>（末尾 assistant 消息已有 <code>tool_calls</code> 则就地改其参数，否则 push 一条带 <code>tool_calls</code> 的 assistant 消息）。</li>
+</ul>
+<p><strong>function_arguments_done（工具执行与递归续回合）</strong></p>
+<ul>
+<li>参数收集完毕，调用 <code>handleTool(data.name, parse(functionArguments))</code> 执行工具（<code>search_location</code> → <code>/api/search_location</code>、<code>plan_itinerary</code> → <code>/api/create_itinerary</code>，见 <code>lib/tools.ts</code>）。</li>
+<li>把 <code>chatMessages</code> 末尾对应 <code>function_call</code> 置为 <code>status: &#39;completed&#39;</code> 并写入 <code>output</code>（序列化工具结果）；向 <code>conversationItems</code> push 一条 <code>{ role: &#39;tool&#39;, tool_call_id: data.callId, content: JSON.stringify(result) }</code>。</li>
+<li>然后<strong>递归调用 <code>processMessages()</code></strong> 再开一个回合，让模型基于工具结果继续作答，直到模型不再请求工具、返回纯文本 <code>assistant_delta</code> 为止。</li>
+</ul>
+<h2>边界行为与错误处理</h2>
+<p><strong>边界行为</strong></p>
+<ul>
+<li><strong>空消息跳过</strong>：<code>handleSendMessage</code> 对 <code>!message.trim()</code> 直接 return，不写 store、不发请求（见上）。</li>
+<li><strong><code>[DONE]</code> 终止</strong>：<code>handleTurn</code> 读取 SSE 行时若遇 <code>data: [DONE]</code> 置 <code>done = true</code> 并退出循环。</li>
+<li><strong>流式中断的 buffer 余量</strong>：<code>handleTurn</code> 用 <code>buffer</code> 承接解码后尚未完整成帧的字节，按 <code>\n\n</code> 切分、把末段（可能是不完整帧）<code>pop</code> 回 buffer 留待下块拼接。循环结束后，若 buffer 中仍残留一条完整的 <code>data: </code> 帧（例如流在帧边界处结束），则在&quot;处理 buffer 余量&quot;的分支里再解析一次，避免丢尾。</li>
+</ul>
+<p><strong>错误处理（三层）</strong></p>
+<ul>
+<li><strong>前端 <code>handleSendMessage</code></strong>：对 <code>processMessages()</code> 的 <code>await</code> 包裹 <code>try/catch</code>，失败 <code>console.error(&#39;Error processing message:&#39;, error)</code>。</li>
+<li><strong>前端 <code>handleTurn</code></strong>：<code>response.ok</code> 为 false 时 <code>console.error(&#39;Error: &#39; + response.statusText)</code>；整个读取过程再包一层 <code>try/catch</code>，异常 <code>console.error(&#39;Error handling turn:&#39;, error)</code>。</li>
+<li><strong>后端路由 <code>get_response</code></strong>：外层 <code>POST</code> handler 包 <code>try/catch</code>，失败返回 <code>{ error: message }</code> + HTTP 500；流的 <code>start</code> 内部也包 <code>try/catch</code>，异常时 <code>controller.error(error)</code> 终止流。</li>
+</ul>
+<p><strong>编排上的自愈点</strong>：<code>processMessages</code> 通过递归续回合让流式工具调用天然变成多轮循环——单次 <code>handleSendMessage</code> 触发的一次 <code>processMessages</code> 可能内部递归多轮，直到模型产出最终文本。这取代了 challenge2-3 在 <code>handleTurn</code> 里检查 assistant 消息含 <code>tool_calls</code> 后手动递归的执行方式。</p>
+<h2>相关页面</h2>
+<ul>
+<li>/openwiki/architecture/api-routes.md —— <code>/api/get_response</code> 的 SSE 流与三事件重映射细节</li>
+<li>/openwiki/architecture/frontend-components.md —— 组件树、zustand 双数组模型与流式下 Message/ToolCall 实时更新</li>
+<li>/openwiki/concepts/challenges.md —— challenge1-3 非流式 vs challenge5 流式的演进对照</li>
+<li>/openwiki/workflows/tool-calling.md —— 工具调用循环与 handleTool 分派</li>
+</ul>
+</article><article class="wiki-doc" id="original-9-实时语音模式-realtime-api-webrtc"><div class="doc-kicker">09 · ../workflows/realtime-voice.md</div><h1>实时语音模式（Realtime API + WebRTC）</h1>
+<p><code>VoiceMode</code>（<code>components/voice-mode.tsx</code>）是 Wanderlust Concierge 的<strong>实时语音对话</strong>入口，与文本聊天并行运行。它不经过 Flask 后端，也不复用文本的 <code>get_response</code> 路径，而是让浏览器<strong>直接</strong>通过 WebRTC 连上 OpenAI Realtime API：前半段由服务端 <code>/api/session</code> 换出 ephemeral token（鉴权凭据不落浏览器），后半段由浏览器自己完成 RTCPeerConnection 握手、SDP offer/answer 交换，以及经 <code>oai-events</code> 数据通道收发结构化 JSON 事件。challenge4 首度引入该链路（纯语音问答），challenge5 在其上叠加了<strong>语音内工具调用</strong>（<code>search_location</code>），使模型在语音会话里也能触发真实搜索。</p>
+<p>组件挂在 <code>components/chat.tsx</code> 的发送按钮旁（<code>&lt;VoiceMode /&gt;</code>），渲染为一个黑底圆钮，点击在&quot;连接/断开&quot;之间切换（见 <code>challenge4/frontend/components/chat.tsx#L70</code> 与 <code>challenge5/frontend/components/chat.tsx#L70</code>）。</p>
+<h2>配置常量（lib/constants.ts）</h2>
+<p>Realtime 语音的端点、模型、音色与提示词集中在 <code>lib/constants.ts</code>：</p>
+<ul>
+<li><code>REALTIME_BASE_URL = &#39;https://api.openai.com/v1/realtime&#39;</code> —— SDP offer 的 POST 目标。</li>
+<li><code>REALTIME_MODEL = &#39;gpt-4o-realtime-preview&#39;</code> —— Realtime 会话所用模型（与文本用的 <code>gpt-4o</code>/<code>MODEL</code> 不同）。</li>
+<li><code>VOICE = &#39;coral&#39;</code> —— <code>/api/session</code> 请求体里选的音色。</li>
+<li><code>REALTIME_PROMPT</code> —— 语音助手的系统提示词，把语言模型塑造成&quot;充满活力的 Wanderlust Concierge&quot;旅行助手（与 <code>SYSTEM_PROMPT</code> 是不同文案）。</li>
+<li><code>REALTIME_TOOLS</code>（仅 challenge5）—— 语音会话注册的工具 Schema，只含一个简化的 <code>search_location</code>（<code>location</code>、<code>search_query</code> 两个字符串参数），描述&quot;在特定地点搜索地标或酒店&quot;。</li>
+</ul>
+<div class="mermaid">sequenceDiagram
+    participant U as 用户(按钮点击)
+    participant V as VoiceMode 组件
+    participant S as /api/session 路由
+    participant O as OpenAI Realtime API
+    participant P as RTCPeerConnection
+    participant D as oai-events 数据通道
+    participant E as 音频元素/麦克风
+
+    U-&gt;&gt;V: handleConnectClick 点击
+    V-&gt;&gt;S: GET /api/session
+    S-&gt;&gt;O: POST /v1/realtime/sessions { model, voice }
+    O--&gt;&gt;S: { client_secret.value, id }
+    S--&gt;&gt;V: 原样回传 (含 client_secret)
+    V-&gt;&gt;P: new RTCPeerConnection()
+    V-&gt;&gt;E: getUserMedia({ audio: true })
+    E--&gt;&gt;V: 本地音频流
+    V-&gt;&gt;P: addTrack + createDataChannel(&#39;oai-events&#39;)
+    V-&gt;&gt;P: createOffer / setLocalDescription
+    V-&gt;&gt;O: POST REALTIME_BASE_URL?model=REALTIME_MODEL (SDP offer)
+    O--&gt;&gt;V: SDP answer (文本)
+    V-&gt;&gt;P: setRemoteDescription(answer)
+    P--&gt;&gt;V: ontrack 收到远端音频流
+    V-&gt;&gt;E: audio.srcObject = 远端流 (自动播放)
+    D--&gt;&gt;V: open 事件
+    V-&gt;&gt;D: session.update { instructions, tools }
+    V-&gt;&gt;E: 用户说话 → 上行音频
+    D--&gt;&gt;V: conversation.item.created (function_call)
+    V-&gt;&gt;S: POST /api/search_location { location, search_query }
+    S--&gt;&gt;V: 搜索结果
+    V-&gt;&gt;D: conversation.item.create (function_call_output)
+    V-&gt;&gt;D: response.create
+    O--&gt;&gt;P: 合成语音回答 → 播放
+</div>
+<p><em>图：语音会话从换取 token 到 WebRTC 建连、数据通道事件往返与工具调用的完整时序。</em></p>
+<h2>入口与生命周期状态</h2>
+<p>组件维护两个 booleans：<code>isSessionStarted</code>（是否已发出过建连流程）与 <code>isSessionActive</code>（数据通道是否已 <code>open</code>），外加一个 <code>dataChannel</code> state 与几个 ref（<code>peerConnection</code>、<code>audioElement</code>、<code>audioStream</code>、<code>audioTransceiver</code>、<code>tracks</code>）。圆钮的 <code>onClick</code> 走 <code>handleConnectClick</code>：<code>isSessionActive</code> 为真则 <code>stopSession()</code>，否则 <code>startSession()</code>（见 <code>challenge5/frontend/components/voice-mode.tsx#L202-L210</code>）。<code>isSessionActive</code> 生效时按钮加上 <code>animate-pulse</code> 脉动动画提示正在通话。</p>
+<h2>startSession：建立语音会话</h2>
+<p><code>startSession()</code> 是建连主干，challenge4 与 challenge5 实现完全一致（<code>challenge5/frontend/components/voice-mode.tsx#L28-L97</code>）：</p>
+<ol>
+<li><strong>取 ephemeral token</strong>：<code>fetch(&#39;/api/session&#39;).then(r =&gt; r.json())</code>，从响应里解出 <code>session.client_secret.value</code> 与 <code>session.id</code>。<code>client_secret.value</code> 是浏览器后续鉴权 SDP 请求所持的短时凭据。</li>
+<li><strong>建 peer connection</strong>：<code>new RTCPeerConnection()</code>。</li>
+<li><strong>准备远端音频播放</strong>：懒创建 <code>audioElement</code>（<code>document.createElement(&#39;audio&#39;)</code>），设 <code>autoplay = true</code>；<code>pc.ontrack</code> 回调把 <code>e.streams[0]</code> 赋给 <code>audioElement.srcObject</code>，模型合成的回答语音由此播出。</li>
+<li><strong>采麦克风</strong>：<code>navigator.mediaDevices.getUserMedia({ audio: true })</code>，把 <code>stream.getTracks()</code> 逐个 <code>pc.addTrack(track, stream)</code>，并把返回的 <code>RTCRtpSender</code> 记进 <code>tracks.current</code>。</li>
+<li><strong>建数据通道</strong>：<code>pc.createDataChannel(&#39;oai-events&#39;)</code>（固定名），<code>setDataChannel(dc)</code> 存入 state。该通道是后续收发 Realtime 事件的载体。</li>
+<li><strong>SDP 握手</strong>：<code>pc.createOffer()</code> → <code>setLocalDescription(offer)</code> → 把 <code>offer.sdp</code> 文本用 <code>POST</code> 发到 <code>`${REALTIME_BASE_URL}?model=${REALTIME_MODEL}`</code>，请求头 <code>Authorization: Bearer &lt;sessionToken&gt;</code>、<code>Content-Type: application/sdp</code>；响应体是该模型对 offer 的 <strong>SDP answer</strong>（纯文本），包成 <code>{ type: &#39;answer&#39;, sdp }</code> 后 <code>setRemoteDescription(answer)</code> 完成握手。</li>
+<li>成功后 <code>peerConnection.current = pc</code>。</li>
+</ol>
+<p>整个 <code>startSession</code> 由 <code>if (!isSessionStarted)</code> 守卫，保证同一次挂载只建一条连接；异常统一 <code>console.error(&#39;Error starting session:&#39;, error)</code>。</p>
+<h2>session.update 与事件监听（数据通道 open 后）</h2>
+<p><code>useEffect</code> 在 <code>dataChannel</code> 创建后挂监听器（challenge4 见 <code>challenge4/frontend/components/voice-mode.tsx#L130-L155</code>，challenge5 见 <code>challenge5/frontend/components/voice-mode.tsx#L136-L200</code>）。<code>open</code> 事件触发时：</p>
+<ul>
+<li><code>setIsSessionActive(true)</code>（UI 进入活跃态、按钮脉冲）。</li>
+<li>发送 <code>session.update</code> 注入会话配置：challenge4 只发 <code>{ instructions: REALTIME_PROMPT }</code>；<strong>challenge5 额外带上 <code>{ tools: REALTIME_TOOLS }</code></strong>，把 <code>search_location</code> 注册给模型，是语音内工具调用的前提。</li>
+</ul>
+<p><code>sendClientEvent</code> 是统一的出站函数：若 <code>dataChannel</code> 存在，给事件补 <code>event_id</code>（缺省用 <code>crypto.randomUUID()</code>）后 <code>JSON.stringify</code> 发上通道；否则 <code>console.error(&#39;Failed to send message - no data channel available&#39;, ...)</code>。</p>
+<h2>challenge4 vs challenge5 的核心差异</h2>
+<p>两者共享相同的 <code>startSession</code>/<code>stopSession</code>/<code>sendClientEvent</code> 骨架与 UI，差异集中在<strong>数据通道的消息处理</strong>与 <strong>session.update 内容</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>challenge4</th>
+<th>challenge5</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>session.update</code> tools</td>
+<td>仅 <code>instructions</code></td>
+<td><code>instructions</code> + <code>tools: REALTIME_TOOLS</code></td>
+</tr>
+<tr>
+<td><code>conversation.item.created</code> 处理</td>
+<td>空处理器（<code>const output = event</code> 后未使用）</td>
+<td>检测 <code>output?.type === &#39;function_call&#39;</code> 并执行 <code>handleToolCall</code></td>
+</tr>
+<tr>
+<td>语音内工具</td>
+<td>无</td>
+<td><code>search_location</code> → <code>/api/search_location</code></td>
+</tr>
+<tr>
+<td>常量</td>
+<td>无 <code>REALTIME_TOOLS</code></td>
+<td>新增 <code>REALTIME_TOOLS</code></td>
+</tr>
+</tbody></table>
+<p>challenge4 的语音模式只做&quot;听→答&quot;的语音问答，数据通道收到 <code>conversation.item.created</code> 时不产生任何动作；challenge5 让模型能在说话中触发 <code>search_location</code>：当收到 <code>conversation.item.created</code> 事件、且其 <code>type === &#39;function_call&#39;</code> 时，<code>handleToolCall</code> 执行工具并把结果以 <code>function_call_output</code> 事件写回，再强制 <code>response.create</code> 让模型基于结果继续作答。</p>
+<h2>handleToolCall：语音内工具调用（challenge5）</h2>
+<p><code>handleToolCall(output)</code> 是 challenge5 新增的处理函数（<code>challenge5/frontend/components/voice-mode.tsx#L137-L170</code>）：</p>
+<ol>
+<li>从事件载荷取出 <code>output.name</code> 与 <code>output.arguments</code>，打印到控制台。</li>
+<li>预置一个 <code>ToolCallOutput</code>：<code>response: &quot;Tool call &lt;name&gt; executed successfully.&quot;</code>。</li>
+<li>若 <code>toolCall.name === &#39;search_location&#39;</code>，把 <code>toolCall.arguments</code> 作为请求体 <code>POST /api/search_location</code>，取回 <code>results</code> 并塞进 <code>toolCallOutput.search_results</code>（复用文本链路同一个 SerpAPI 搜索路由）。</li>
+<li>发送 <code>conversation.item.create</code>，写入 <code>{ type: &#39;function_call_output&#39;, call_id: output.call_id, output: JSON.stringify(toolCallOutput) }</code> —— 把工具结果作为对话 item 追加。</li>
+<li>发送 <code>response.create</code> <strong>强制模型再生成一轮</strong>，保证模型在拿到工具结果后立即回复，而不是停在等待态（源码注释：&quot;Force a model response to make sure it responds after tool calls&quot;）。</li>
+</ol>
+<p>这一闭环与文本链路的工具循环（<code>lib/tools.ts</code> 的 <code>handleTool</code>）形态一致，但运行在 Realtime 事件协议上：模型发 <code>function_call</code> → 前端执行搜索 → 回写 <code>function_call_output</code> → <code>response.create</code> 续答。</p>
+<h2>stopSession：资源清理</h2>
+<p><code>stopSession()</code>（challenge4/5 一致，见 <code>challenge5/frontend/components/voice-mode.tsx#L100-L117</code>）逆序释放资源：</p>
+<ul>
+<li><code>dataChannel.close()</code> 关数据通道。</li>
+<li><code>peerConnection.current.close()</code> 关对等连接。</li>
+<li>复位状态：<code>setIsSessionStarted(false)</code>、<code>setIsSessionActive(false)</code>、<code>setDataChannel(null)</code>、<code>peerConnection.current = null</code>。</li>
+<li>停止本机音频：<code>audioStream.getTracks().forEach(track =&gt; track.stop())</code>，<code>setAudioStream(null)</code>、<code>audioTransceiver.current = null</code>。</li>
+</ul>
+<p>关闭数据通道与对等连接即释放 WebRTC 传输通道，停止本地音频 track 释放麦克风。<code>tracks</code>（<code>RTCRtpSender[]</code>）与 <code>audioTransceiver</code> 这两个 ref 在源码中被声明并（部分）赋值，但未在 <code>stopSession</code> 里反向移除 sender，麦克风的实际释放依赖 <code>audioStream.getTracks().forEach(=&gt; stop())</code> 这一条路径。</p>
+<h2>数据通道事件协议（oai-events）</h2>
+<p><code>oai-events</code> 通道承载 Realtime API 的<strong>结构化 JSON 事件</strong>，出站与入站两类：</p>
+<ul>
+<li><strong>出站（<code>sendClientEvent</code>）</strong>：<ul>
+<li><code>session.update</code>（含 <code>instructions</code> 与 challenge5 的 <code>tools</code>）；</li>
+<li><code>conversation.item.create</code>（challenge5 写入 <code>function_call_output</code>）；</li>
+<li><code>response.create</code>（challenge5 工具调用后强制续答）。</li>
+</ul>
+</li>
+<li><strong>入站（<code>message</code> 监听）</strong>：<ul>
+<li><code>conversation.item.created</code>（模型产出 item 时推送；challenge5 据此识别 <code>function_call</code>）。</li>
+</ul>
+</li>
+</ul>
+<p>音频走 WebRTC 的 RTP 媒体轨道（<code>ontrack</code>/<code>addTrack</code>），不经过数据通道；数据通道只负责控制与结构化事件。</p>
+<h2>配置与运维要点</h2>
+<ul>
+<li>语音链路只依赖 <code>OPENAI_API_KEY</code>（<code>/api/session</code> 用 <code>process.env.OPENAI_API_KEY</code> 请求分发 token）与 <code>SERPAPI_API_KEY</code>（challenge5 的语音工具调用经 <code>/api/search_location</code> 读取）。<code>/api/session</code> 是切换点：它把 <code>OPENAI_API_KEY</code> 留在服务端，仅在响应里回传短时间内有效的 <code>client_secret.value</code> 给浏览器，避免主密钥暴露。</li>
+<li>正确模型/音色不匹配、缺 <code>SERPAPI_API_KEY</code>、或 offer 携带非法 token 都会使 <code>startSession</code> 失败并落入 <code>console.error</code>；<code>/api/session</code> 自身失败返回 <code>{ error }</code> + HTTP 500。</li>
+<li>challenge4/5 的 <code>python-backend</code> 均无语音对应端点——语音完全由前端直连 Realtime API 完成，Flask 只是文本/工具路径的替代实现。</li>
+</ul>
+<h2>相关页面</h2>
+<ul>
+<li>/openwiki/concepts/challenges.md —— challenge4 引入 Realtime 语音、challenge5 叠加语音内工具调用的关卡演进对照</li>
+<li>/openwiki/architecture/api-routes.md —— <code>/api/session</code>（ephemeral token）与 <code>/api/search_location</code>（SerpAPI）路由细节</li>
+<li>/openwiki/architecture/frontend-components.md —— 组件树与 VoiceMode 在 Chat 中的挂载位置</li>
+<li>/openwiki/integrations/external-apis.md —— OpenAI Realtime API 与 SerpAPI 外部集成的鉴权与代理边界</li>
+</ul>
+</article><article class="wiki-doc" id="original-10-流式响应-sse-协议"><div class="doc-kicker">10 · ../workflows/streaming.md</div><h1>流式响应（SSE）协议</h1>
+<p>challenge5 把 challenge1-3 的&quot;一次请求、一次性 JSON 响应&quot;重构为 <strong>SSE（Server-Sent Events）流式</strong>：后端不再等到整个回答或整个工具调用参数生成完毕才返回，而是通过 <code>text/event-stream</code> 持续向前端推送<strong>自描述的增量事件</strong>，前端按事件类型逐块原地更新 UI，实现打字机式的文本与实时的工具参数预览。本文聚焦<strong>流式协议本身</strong>：事件结构、SSE 帧编码、后端如何把 OpenAI 增量重映射为这些事件、前端如何增量读取与处理部分 JSON，以及流模式与非流模式的对比。</p>
+<p>该页是 <code>/openwiki/workflows/chat-turn.md</code>（单次回合整体数据流）与 <code>/openwiki/architecture/api-routes.md</code>（路由级对照）中 SSE 细节的展开，重点落在&quot;线路上到底跑了什么、前端如何解析&quot;。</p>
+<h2>SSE 事件流全链路</h2>
+<p>一次流式回合从前端发起请求到后端生成再到前端渲染的完整链路如下：</p>
+<div class="mermaid">sequenceDiagram
+    participant F as 前端 handleTurn
+    participant R as /api/get_response 路由
+    participant O as openai.beta.chat.completions.stream
+    participant P as processMessages onMessage
+    participant S as zustand store / UI
+
+    F-&gt;&gt;R: POST { messages } (application/json)
+    R-&gt;&gt;O: stream({ model: &#39;gpt-4o&#39;, messages, tools })
+    R--&gt;&gt;F: 200 text/event-stream (ReadableStream)
+    O--&gt;&gt;R: 增量事件 choice.delta
+    Note over R: 重映射为 SSE 事件
+    loop 持续推送
+        alt delta.content 存在
+            R--&gt;&gt;F: data: {&quot;event&quot;:&quot;assistant_delta&quot;,...}
+            F-&gt;&gt;F: getReader + TextDecoder 增量解码
+            F-&gt;&gt;S: 追加/更新 assistant 气泡
+        else delta.tool_calls 存在
+            R-&gt;&gt;R: 累积 arguments 与 callId/name
+            R--&gt;&gt;F: data: {&quot;event&quot;:&quot;function_arguments_delta&quot;,...}
+            F-&gt;&gt;P: partial-json parse 部分 JSON
+            F-&gt;&gt;S: 实时更新 function_call 气泡预览
+        end
+    end
+    Note over R: finishReason === &#39;tool_calls&#39; 时
+    R--&gt;&gt;F: data: {&quot;event&quot;:&quot;function_arguments_done&quot;,&quot;arguments&quot;:完整}
+    R--&gt;&gt;F: controller.close() 自然结束（不发送 [DONE]）
+    F-&gt;&gt;P: handleTool 执行工具，递归下一回合
+    F-&gt;&gt;F: 遇 data: [DONE] 则终止
+</div>
+<p><em>图：SSE 事件流从前端的 fetch/读取，到路由调用 OpenAI 流并重映射事件，再到前端增量解析与渲染的完整链路。</em></p>
+<h2>事件与帧编码规范</h2>
+<p>后端把 OpenAI 的增量 <code>delta</code> 重映射为<strong>三种前端事件</strong>，每条记录以 SSE 标准帧 <code>data: &lt;json&gt;\n\n</code> 编码（<code>\n\n</code> 为帧分隔符）。协议不依赖字段顺序，前端只需按 <code>event</code> 分派。</p>
+<table>
+<thead>
+<tr>
+<th>事件</th>
+<th>触发条件</th>
+<th>payload.data 内容</th>
+<th>前端语义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>assistant_delta</code></td>
+<td><code>delta.content</code> 存在</td>
+<td><code>{ content }</code>（文本增量）</td>
+<td>累加形成打字机文本</td>
+</tr>
+<tr>
+<td><code>function_arguments_delta</code></td>
+<td><code>delta.tool_calls</code> 存在</td>
+<td><code>{ callId, name, arguments }</code>（当块增量参数）</td>
+<td>累积参数并实时预览</td>
+</tr>
+<tr>
+<td><code>function_arguments_done</code></td>
+<td><code>finishReason === &#39;tool_calls&#39;</code> 且正在收集</td>
+<td><code>{ callId, name, arguments }</code>（<strong>累积完整</strong>参数）</td>
+<td>触发工具执行</td>
+</tr>
+<tr>
+<td><code>[DONE]</code></td>
+<td>前端终止标记</td>
+<td>无 JSON</td>
+<td>结束读取循环</td>
+</tr>
+</tbody></table>
+<p>四个事件中，<code>assistant_delta</code>、<code>function_arguments_delta</code>、<code>function_arguments_done</code> 由<strong>后端</strong>发送（见 <code>challenge5/frontend/app/api/get_response/route.ts#L33-L79</code>）；<code>[DONE]</code> 是<strong>前端</strong>解析时识别的终止标记（<code>challenge5/frontend/lib/assistant.ts#L62-L65</code>），后端路由本身在流迭代完之后直接 <code>controller.close()</code>，并不会显式写出 <code>[DONE]</code>——OpenAI SDK 的流迭代 <code>for await</code> 自然结束即关闭流。</p>
+<h2>后端：用 ReadableStream 构造 SSE 响应</h2>
+<p><code>app/api/get_response/route.ts</code> 的 <code>POST</code> handler 先 <code>await request.json()</code> 取出 <code>{ messages }</code>，随后用一个 <code>ReadableStream</code> 作为响应体。流的 <code>start(controller)</code> 内部：</p>
+<ol>
+<li><strong>发起 OpenAI 流式补全</strong>：<code>openai.beta.chat.completions.stream({ model: &#39;gpt-4o&#39;, messages, tools })</code>（<code>tools</code> 来自 <code>lib/tools.ts</code> 的 <code>search_location</code> 与 <code>plan_itinerary</code>）。此 API 返回一个可 <code>for await</code> 迭代的异步迭代器，按增量产出 <code>part</code>。</li>
+<li><strong>为工具调用累积状态</strong>：路由维护四个模块级局部变量——<code>functionArguments</code>（累积参数串）、<code>callId</code>（调用 id）、<code>functionName</code>（工具名）、<code>isCollectingFunctionArgs</code>（是否处于工具参数收集阶段），用于把 OpenAI 的多个 <code>tool_calls</code> 增量聚合成一次 <code>function_arguments_done</code>。</li>
+<li><strong>逐 part 重映射</strong>：每条 <code>part.choices[0].delta</code> 与 <code>finish_reason</code> 决定发送哪类事件，<code>controller.enqueue(\</code>data: ${json}\n\n`)` 把编码后的帧推入流。</li>
+<li><strong>流结束</strong>：<code>for await</code> 结束后 <code>controller.close()</code>；<code>start</code> 内部 catch 到异常时 <code>controller.error(error)</code> 终止流。</li>
+</ol>
+<p>响应本身用 <code>new Response(stream, { headers })</code> 返回，<code>Content-Type: text/event-stream</code>、<code>Cache-Control: no-cache</code>、<code>Connection: keep-alive</code>（<code>challenge5/frontend/app/api/get_response/route.ts#L90-L96</code>）。外层 POST handler 的 catch 返回 <code>{ error: message }</code> + HTTP 500。</p>
+<p><strong>事件重映射的逐条逻辑</strong>（<code>challenge5/frontend/app/api/get_response/route.ts#L29-L80</code>）：</p>
+<ul>
+<li><code>assistant_delta</code>：<code>delta.content</code> 为真时，把整个 <code>delta</code> 对象序列化进 <code>data</code> 字段推流。</li>
+<li><code>function_arguments_delta</code>：<code>delta.tool_calls</code> 为真时，先置 <code>isCollectingFunctionArgs = true</code>，若该块带 <code>id</code> 则记录 <code>callId</code>，若带 <code>function.name</code> 则记录 <code>functionName</code>，并把 <code>delta.tool_calls[0].function?.arguments || &#39;&#39;</code> 追加进累积变量 <code>functionArguments</code>；随后把 <code>{ callId, name, arguments: &lt;当前块增量&gt; }</code> 推流。<strong>注意 <code>data.arguments</code> 是&quot;当块增量&quot;而非完整参数</strong>，完整参数由前端自己累加。</li>
+<li><code>function_arguments_done</code>：当 <code>finishReason === &#39;tool_calls&#39;</code> 且 <code>isCollectingFunctionArgs</code> 为真时，把 <code>{ callId, name, arguments: functionArguments }</code>（此时是<strong>完整累积</strong>参数）推流，然后<strong>重置</strong> <code>functionArguments</code>、<code>functionName</code>、<code>isCollectingFunctionArgs</code>，为下一条工具调用做准备。</li>
+</ul>
+<h2>前端：handleTurn 增量读取</h2>
+<p><code>lib/assistant.ts</code> 的 <code>handleTurn(messages, onMessage)</code> 负责消费这条 SSE 流（<code>challenge5/frontend/lib/assistant.ts#L25-L83</code>）：</p>
+<ol>
+<li><code>fetch(&#39;/api/get_response&#39;, { method: &#39;POST&#39;, headers: { &#39;Content-Type&#39;: &#39;application/json&#39; }, body: JSON.stringify({ messages }) })</code> 发起请求（默认走 Next.js 路由；旁边注释的 <code>http://localhost:8000/get_response</code> 是切换 Flask 后端的备选）。</li>
+<li><code>const reader = response.body!.getReader()</code> 拿到 <code>ReadableStream</code> 的读取器，配 <code>new TextDecoder()</code> 逐块解码字节。</li>
+<li><code>while (!done)</code> 循环里 <code>await reader.read()</code>，<code>decoder.decode(value)</code> 得到本块的字符串并追加进 <code>buffer</code>。</li>
+<li><strong>按帧切分</strong>：<code>buffer.split(&#39;\n\n&#39;)</code> 得到多个完整 SSE 帧，把可能是不完整帧的<strong>末段</strong> <code>lines.pop()</code> 回 <code>buffer</code> 留待下块拼接（这是处理&quot;一条事件被跨块截断&quot;的关键不变量）。</li>
+<li>对每个完整行，若以 <code>data: </code> 开头则 <code>line.slice(6)</code> 取出 payload：若是 <code>[DONE]</code> 置 <code>done = true</code> 并跳出；否则 <code>JSON.parse(dataStr)</code> 后回调 <code>onMessage(data)</code>。</li>
+<li><strong>buffer 余量处理</strong>：循环结束后，若 <code>buffer</code> 里仍残留一条完整的 <code>data: </code> 帧（例如流恰好在帧边界结束），再解析一次，避免丢尾。</li>
+</ol>
+<h2>前端：按事件类型增量更新（processMessages）</h2>
+<p><code>processMessages()</code>（<code>challenge5/frontend/lib/assistant.ts#L85-L241</code>）从 store 取快照、组装 <code>[system(SYSTEM_PROMPT), ...conversationItems]</code> 后调用 <code>handleTurn</code>，在 <code>onMessage</code> 里按 <code>event</code> 分派：</p>
+<ul>
+<li><strong><code>assistant_delta</code></strong>：<code>assistantMessageContent += data.content</code>，并把 <code>chatMessages</code> 末尾的 assistant <code>message</code> 就地更新（产生打字机逐字追加效果），同时同步更新 <code>conversationItems</code> 末尾的 assistant 消息。</li>
+<li><strong><code>function_arguments_delta</code></strong>：<code>functionArguments += data.arguments</code> 累积增量参数，再用 <code>parse(functionArguments)</code> 生成 <code>parsedFunctionArguments</code>（见下节），就地更新 <code>chatMessages</code> 末尾同 <code>callId</code> 的 <code>function_call</code> 条目，并同步 <code>conversationItems</code> 的 <code>tool_calls[0].function.arguments</code>。</li>
+<li><strong><code>function_arguments_done</code></strong>：调用 <code>handleTool(data.name, parse(functionArguments))</code> 执行工具（<code>search_location</code> → <code>/api/search_location</code>、<code>plan_itinerary</code> → <code>/api/create_itinerary</code>），把 <code>function_call</code> 置为 <code>completed</code> 并写入 <code>output</code>，向 <code>conversationItems</code> push <code>{ role: &#39;tool&#39;, tool_call_id: data.callId, content: JSON.stringify(result) }</code>，最后<strong>递归调用 <code>processMessages()</code></strong> 开启下一个回合，让模型基于工具结果继续作答。</li>
+</ul>
+<p>组件层 <code>components/tool-call.tsx</code> 用 <code>SyntaxHighlighter</code> 渲染 <code>functionCall.parsedArguments</code>（即 partial-json 的实时解析结果），用户可看到参数随着流式推送逐渐成形。</p>
+<h2>partial-json：容错解析部分 JSON</h2>
+<p>包 <code>partial-json</code>（<code>^0.1.7</code>，见 <code>package.json</code> 依赖）在 <code>lib/assistant.ts</code> 顶部以 <code>import { parse } from &#39;partial-json&#39;</code> 引入。与标准 <code>JSON.parse</code> 不同，它对<strong>截断的 JSON 输入容错</strong>：当工具参数尚未完整到达（流式增量中间态，例如 <code>{&quot;locati</code> 或 <code>{&quot;location&quot;:&quot;Paris&quot;,&quot;</code>）时也能返回一个尽量完整的对象，而不是抛 <code>SyntaxError</code>。这使 <code>parsedFunctionArguments</code> 能随每个 <code>function_arguments_delta</code> 实时更新，支撑&quot;工具参数边生成边预览&quot;的体验。真正执行工具时（<code>function_arguments_done</code> 分支）参数已完整，仍用同一个 <code>parse</code> 得到完整对象交给 <code>handleTool</code>。</p>
+<h2>流模式 vs 非流模式对比</h2>
+<p>challenge1-3 的 <code>handleTurn</code> 是<strong>非流式</strong>：<code>await response.json()</code> 一次性拿到完整的单条 assistant <code>MessageItem</code>，然后整体 <code>push</code> 进 <code>chatMessages</code> 与 <code>conversationItems</code>（见 <code>challenge1/frontend/lib/assistant.ts#L55-L65</code>）。challenge5 改为流式后，两条路径的差异如下：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>非流式（challenge1-3）</th>
+<th>流式 SSE（challenge5）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>后端</td>
+<td>一次性返回完整 JSON</td>
+<td><code>text/event-stream</code> 持续推进增量事件</td>
+</tr>
+<tr>
+<td>前端读取</td>
+<td><code>await response.json()</code> 一次完成</td>
+<td><code>getReader()</code> + <code>TextDecoder</code> 增量读</td>
+</tr>
+<tr>
+<td>文本展示</td>
+<td>等到全部生成后一次性出现</td>
+<td>打字机式逐字追加</td>
+</tr>
+<tr>
+<td>工具参数</td>
+<td>完整后可见</td>
+<td>边生成边预览（partial-json）</td>
+</tr>
+<tr>
+<td>首字节延迟</td>
+<td>高（等待完整回答）</td>
+<td>低（首个增量即可渲染）</td>
+</tr>
+<tr>
+<td>中断/错误</td>
+<td>整体失败或整体成功</td>
+<td>可在帧边界增量处理，<code>controller.error</code> 终止流</td>
+</tr>
+<tr>
+<td>实现复杂度</td>
+<td>低</td>
+<td>中（需按帧切分、处理部分 JSON）</td>
+</tr>
+</tbody></table>
+<p>流式的主要收益是<strong>感知延迟降低</strong>（首块输出即可上屏，而非等待完整回答）与<strong>工具调用可视化</strong>（参数实时成形）；代价是协议解析复杂度上升（SSE 帧切分、跨块缓冲、部分 JSON 容错）。非流式更简单可靠，但对长回答与长参数缺少渐进反馈。Flask 后端（<code>python-backend/app.py</code> 的 <code>/get_response</code>）仍是非流式——若前端切换到该后端，<code>handleTurn</code> 的 SSE 解析逻辑需同步改为直接 <code>response.json()</code>。</p>
+<h2>相关页面</h2>
+<ul>
+<li>/openwiki/workflows/chat-turn.md —— 单次回合从用户输入到回复的完整数据流与 zustand 双数组一致性</li>
+<li>/openwiki/workflows/tool-calling.md —— 工具调用循环、handleTool 分派与多轮续回合</li>
+<li>/openwiki/architecture/api-routes.md —— <code>/api/get_response</code> 在 Next.js 路由体系中的位置与 Flask 后端对照</li>
+<li>/openwiki/workflows/realtime-voice.md —— 语音模式的另一条实时链路（Realtime API）</li>
+</ul>
+</article><article class="wiki-doc" id="original-11-函数调用-工具调用-流程"><div class="doc-kicker">11 · ../workflows/tool-calling.md</div><h1>函数调用（工具调用）流程</h1>
+<p>Wanderlust Concierge 是旅行助手系统，模型并不能直接访问外部的酒店/景点搜索或自动规划行程——它必须通过声明好的<strong>工具</strong>把这类需求&quot;外包&quot;给后端路由执行。本文梳理从模型决定调用工具、到工具结果作为 <code>tool</code> 角色消息回送给模型、再到模型据此生成最终回复的<strong>完整循环</strong>。</p>
+<p>整个循环横跨三层：</p>
+<ul>
+<li><strong>工具 Schema</strong>（<code>lib/tools.ts</code>）：向前端与后端共同声明的函数定义，决定模型能调用哪些工具及其参数形态。</li>
+<li><strong>后端路由</strong>（<code>app/api/...</code>）：真正执行工具的落点，<code>search_location</code> 查 SerpAPI，<code>plan_itinerary</code> 用推理模型规划行程。</li>
+<li><strong>前端编排</strong>（<code>lib/assistant.ts</code> + <code>lib/tools.ts</code> 的 <code>handleTool</code>）：把模型返回的 <code>tool_calls</code> 翻译为对后端的 HTTP 调用，再把结果以 <code>role: &#39;tool&#39;</code> 消息写回消息数组，最后<strong>递归</strong>重启一轮对话。</li>
+</ul>
+<p>仓库里对&quot;一次工具调用循环&quot;有两种建模：challenge1-3 是<strong>非流式</strong>（<code>handleTurn</code> 递归），challenge5 是 <strong>SSE 流式</strong>（<code>processMessages</code> 递归）。二者共享同一套工具 Schema 与后端，区别只在结果回填的驱动方式。本文以 challenge5 流式为主线，并与非流式对比。</p>
+<h2>工具调用完整循环</h2>
+<div class="mermaid">sequenceDiagram
+  participant C as 前端
+  participant R as 服务端
+  participant M as 模型
+  C-&gt;&gt;R: 提交停靠点
+  R-&gt;&gt;M: 请求规划行程
+  M--&gt;&gt;R: 返回行程内容
+  R--&gt;&gt;C: 返回结果
+</div>
+<p><em>图：从模型返回 tool_calls 到结果回填再递归询问的完整工具调用循环——流式模式按事件累积参数、工具执行结果以 role:&quot;tool&quot; 写回并递归 processMessages。</em></p>
+<h2>工具 Schema：Search_location 与 plan_itinerary</h2>
+<p><code>challenge5/frontend/lib/tools.ts</code> 导出两个关键量：</p>
+<ul>
+<li><strong><code>handleTool(toolName, parameters)</code></strong>：工具分派器。按 <code>toolName</code> 分支，构建对后端路由的 <code>fetch</code>（POST）并返回解析后的 JSON 结果。</li>
+<li><strong><code>tools</code></strong>：传给 OpenAI 的函数 Schema 数组。</li>
+</ul>
+<p><code>tools</code> 数组声明了两个 <code>type: &#39;function&#39;</code> 工具：</p>
+<ol>
+<li><strong><code>search_location</code></strong> —— 在给定地点搜索地标或酒店。参数对象 <code>{ location, search_query }</code>（<code>location</code> 形如 City, (State), Country；<code>search_query</code> 例如 &quot;boutique hotels&quot;），两者均 required，且 <code>additionalProperties: false</code>、<code>strict: true</code>（严格模式）。<code>handleTool</code> 解构出 <code>{ location, search_query }</code> 后 POST 到 <code>/api/search_location</code>（见 <code>challenge5/frontend/lib/tools.ts#L32-L57</code> 与 <code>#L1-L16</code>）。</li>
+<li><strong><code>plan_itinerary</code></strong> —— 用 <code>stops</code> 参数规划行程。参数是 <code>stops</code> 数组，每项含 <code>{ location, duration(天数), type(游览类型), participants(人数) }</code>（均 required）。<code>handleTool</code> 用 <code>JSON.parse(parameters)</code> 解析出 <code>stops</code> 后 POST 到 <code>/api/create_itinerary</code>（见 <code>challenge5/frontend/lib/tools.ts#L58-L95</code> 与 <code>#L17-L29</code>）。</li>
+</ol>
+<p>同一个 <code>tools</code> 数组在<strong>非流式</strong>的 challenge2 前端（<code>challenge2/frontend/lib/tools.ts</code>）与 <strong>Python 后端</strong>（<code>challenge2/python-backend/app.py#L16-L42</code>）中也以相同形态定义（早期版本只有 <code>search_location</code>，<code>plan_itinerary</code> 是后加入的）。</p>
+<h2>前端 get_response 路由把 tools 交给模型</h2>
+<p><code>/api/get_response</code> 路由（<code>challenge5/frontend/app/api/get_response/route.ts</code>）是工具循环的触发点，它在调用 OpenAI 时<strong>显式传入 <code>tools</code> 数组</strong>，模型据此才可能返回 <code>tool_calls</code>：</p>
+<pre><code class="language-ts">const openaiStream = openai.beta.chat.completions.stream({
+  model: &#39;gpt-4o&#39;,
+  messages,
+  tools: tools as ChatCompletionTool[]
+})
+</code></pre>
+<p>请求体里的 <code>messages</code> 就是前端组装的 <code>[system(SYSTEM_PROMPT), ...conversationItems]</code>，其中 SYSTEM_PROMPT（<code>lib/constants.ts</code>）明确提示模型：&quot;当合适时可使用 search_location 工具搜索地标或酒店&quot;。由于模型被喂了工具 Schema，它在合适的时机返回的增量 delta 里会出现 <code>delta.tool_calls</code>，从而触发后续的工具执行分支。非流式版本（challenge2-4）则用 <code>openai.chat.completions.create({ ..., tools })</code>（见 <code>challenge2/frontend/app/api/get_response/route.ts#L13-L18</code>），一次性得到带 <code>message.tool_calls</code> 的完整返回。</p>
+<h2>流式模式：事件累积、执行、递归</h2>
+<p>challenge5 在 <code>processMessages</code> 的回调里按事件类型驱动整条工具循环（<code>challenge5/frontend/lib/assistant.ts#L104-L241</code>）：</p>
+<ul>
+<li><strong><code>function_arguments_delta</code></strong>：每收到一个增量块，执行 <code>functionArguments += data.arguments</code> 累积流式参数；同时更新 UI 上的 <code>function_call</code> 气泡（<code>status: &#39;in_progress&#39;</code>）和 <code>conversationItems</code> 中 assistant 消息的 <code>tool_calls[0].function.arguments</code>。</li>
+<li><strong><code>function_arguments_done</code></strong>：当 <code>finishReason === &#39;tool_calls&#39;</code> 时路由发出该事件，携带<strong>累积完整的</strong> <code>arguments</code>。前端随即调用 <code>handleTool(data.name, parse(functionArguments))</code> 执行工具。</li>
+<li><strong>结果回填</strong>：把返回结果以 <code>role: &#39;tool&#39;</code> 消息 push 进 <code>conversationItems</code>（<code>{ role: &#39;tool&#39;, tool_call_id: data.callId, content: JSON.stringify(toolCallResult) }</code>），并把 <code>function_call</code> 气泡标记为 <code>status: &#39;completed&#39;</code>、写 <code>output</code>。</li>
+<li><strong>递归</strong>：最后 <code>await processMessages()</code> 重新组装含 SYSTEM_PROMPT 与最新 conversationItems（含 tool 结果）的消息数组，再发一轮 <code>/api/get_response</code>，让模型基于工具结果生成最终回复。当模型不再返回工具调用而是正常文本时，<code>assistant_delta</code> 分支接管输出，回合结束。</li>
+</ul>
+<p>后端路由（<code>challenge5/frontend/app/api/get_response/route.ts#L24-L79</code>）在流内自行维护 <code>functionArguments</code> / <code>callId</code> / <code>functionName</code> / <code>isCollectingFunctionArgs</code> 四个局部状态来累积参数，并在 <code>finishReason === &#39;tool_calls&#39;</code> 且正在收集时发出 <code>function_arguments_done</code>，随后重置这些累积状态以备下一轮工具调用。</p>
+<h2>非流式模式：handleTurn 递归</h2>
+<p>challenge2-4 没有 SSE，<code>handleTurn</code> 在收到完整 JSON 回复后检测工具调用（<code>challenge2/frontend/lib/assistant.ts#L56-L87</code>）：</p>
+<ol>
+<li>把返回的 assistant 消息 push 进 <code>conversationItems</code>。</li>
+<li>检查最后一条消息：<code>lastMessage.role === &#39;assistant&#39; &amp;&amp; lastMessage.tool_calls &amp;&amp; lastMessage.tool_calls.length &gt; 0</code>，若成立则进入工具分支。</li>
+<li>调用 <code>handleTool(lastMessage.tool_calls[0].function.name, lastMessage.tool_calls[0].function.arguments)</code>，把返回结果以 <code>role: &#39;tool&#39;</code> 消息（含 <code>tool_call_id</code>）push 进 <code>conversationItems</code>。</li>
+<li><code>await handleTurn()</code> <strong>递归</strong>重启——handleTurn 自己从 store 取快照并重新组装消息数组，再发一轮请求，直到模型不再返回工具调用，此时才把 assistant 消息 push 进 <code>chatMessages</code> 并结束。</li>
+</ol>
+<p>注意此处 <code>handleTool</code> 收到的是<strong>原始 arguments JSON 字符串</strong>，在 <code>JSON.parse(parameters)</code> 后取字段（<code>challenge2/frontend/lib/tools.ts#L4</code>），与流式模式下前端已 <code>parse</code> 过不同。</p>
+<h2>工具后端路由</h2>
+<p>工具执行最终落到两个后端路由，它们的职责就是真正访问外部服务或推理：</p>
+<p><strong><code>/api/search_location</code></strong>（<code>challenge5/frontend/app/api/search_location/route.ts</code>）——查 SerpAPI：</p>
+<ul>
+<li>从请求体取 <code>{ location, search_query }</code>。</li>
+<li>读取 <code>process.env.SERPAPI_API_KEY</code>，若缺失则 <code>throw new Error(&#39;SERPAPI_API_KEY is not defined&#39;)</code>，被 catch 后返回 <code>{ error }</code> 与 <strong>HTTP 500</strong>。</li>
+<li>用 <code>getJson({ engine: &#39;google&#39;, q: search_query, location, api_key: serpApiKey, limit: 5 })</code> 查询 Google organic results（<code>limit: 5</code>），返回 <code>response.organic_results</code> 数组。Python 后端（<code>challenge2/python-backend/app.py#L62-L83</code>）用等价逻辑（<code>GoogleSearch(params).get_dict()[&quot;organic_results&quot;]</code>）。</li>
+</ul>
+<p><strong><code>/api/create_itinerary</code></strong>（<code>challenge5/frontend/app/api/create_itinerary/route.ts</code>）——规划行程：</p>
+<ul>
+<li>从请求体取 <code>stops</code>。</li>
+<li>用 <strong><code>model: &#39;o1&#39;</code>（推理模型）</strong> 调用 <code>openai.chat.completions.create</code>，消息为 <code>[{ role: &#39;system&#39;, content: ITINERARY_PROMPT }, { role: &#39;user&#39;, content: JSON.stringify(stops) }]</code>。</li>
+<li><code>ITINERARY_PROMPT</code>（<code>lib/constants.ts</code>）指导模型按停留时长、游览类型、参与人数规划，并基于&quot;最便利的旅行顺序&quot;给出最优行程顺序与离开时间建议。</li>
+<li>返回 <code>{ itinerary: response.choices[0].message.content }</code>；出错返回 500。</li>
+</ul>
+<h2>关键边界与失败语义</h2>
+<ul>
+<li><strong>密钥缺失</strong>：<code>search_location</code> 无 <code>SERPAPI_API_KEY</code> 时抛错返回 500，<code>handleTool</code> 拿到的 <code>data</code> 是 <code>{ error }</code> 而非搜索结果，会原样作为工具 result 写回模型。</li>
+<li><strong>递归终止条件</strong>：循环依赖&quot;模型不再返回 <code>tool_calls</code>&quot;。只要模型继续要工具结果，<code>processMessages</code>/<code>handleTurn</code> 就会持续递归；一旦模型产出普通文本，就走 <code>assistant_delta</code>/push 分支结束回合。</li>
+<li><strong>并行双数组一致性</strong>：<code>chatMessages</code>（UI 渲染）与 <code>conversationItems</code>（发给 API）在每次工具事件中同步更新；工具结果只写入 <code>conversationItems</code>（<code>role: &#39;tool&#39;</code>），UI 侧则通过 <code>function_call</code> 气泡的 <code>status</code>/<code>output</code> 反映。</li>
+<li><strong>后端可切换</strong>：工具与对话请求注释里都保留了 <code>http://localhost:8000/...</code> 的 Python（Flask）后端备选，替换即可在 TS Next.js 路由与 Flask 后端间切换。</li>
+</ul>
+</article></div></main><aside class="audit-rail" id="source-audit"><h2>与代码核对</h2><p class="audit-verdict">导航和主题组织最好，但入口页有能力边界夸大，语音实现缺陷也未被识别。</p><div class="audit-fact-heading"><span>事实错误</span><strong>3 个</strong></div><section class="issue-card critical-row" id="issue-openwiki-1"><span class="severity severity-critical">严重</span><h3>把两种后端称为等价</h3><p><strong>Wiki 这样写：</strong>每一关同时提供两套等价后端，读者可二选一。</p><p><strong>代码实际表现：</strong>最终阶段的可选后端没有实时会话入口，也不支持文字逐步显示协议，不能完整替代默认后端。</p><p><strong>通俗解释：</strong>像两辆车都能到目的地，但其中一辆没有语音和实时字幕，不能说功能完全一样。</p><p><strong>可能影响：</strong>会让使用者选择后端后才发现核心体验缺失。</p><p><strong>建议修改：</strong>入口页改成基础能力可替代，最终语音和流式能力仅默认后端具备。</p><div class="issue-actions"><button data-locate="两套等价的后端">在 Wiki 中找到这句话</button></div><details><summary>查看证据位置</summary><p><strong>Wiki：</strong>openwiki/repo/openwiki/quickstart.md</p><p><strong>源码：</strong>source/repo/challenge5/python-backend/app.py:91-148; frontend/app/api/session/route.ts:3-29</p></details></section><section class="issue-card critical-row" id="issue-openwiki-2"><span class="severity severity-critical">严重</span><h3>把语音搜索链路当作已经可用</h3><p><strong>Wiki 这样写：</strong>最终阶段收到语音工具事件后执行地点搜索并继续回答。</p><p><strong>代码实际表现：</strong>监听器先确认事件是已创建条目，随后又要求同一字段是工具调用；两个条件不可能同时成立，因此该分支不可达。</p><p><strong>通俗解释：</strong>流程图画出了完整道路，但源码里的闸门条件互相冲突，车辆实际上过不去。</p><p><strong>可能影响：</strong>会把计划中的能力误认为已经完成。</p><p><strong>建议修改：</strong>增加当前不可达警告，并把理想流程和现有流程分开画。</p><div class="issue-actions"><button data-locate="challenge5 让模型能在说话中触发">在 Wiki 中找到这句话</button></div><details><summary>查看证据位置</summary><p><strong>Wiki：</strong>openwiki/repo/openwiki/workflows/realtime-voice.md</p><p><strong>源码：</strong>source/repo/challenge5/frontend/components/voice-mode.tsx:172-183</p></details></section><section class="issue-card medium-row" id="issue-openwiki-3"><span class="severity severity-medium">一般</span><h3>非流式阶段范围前后不一致</h3><p><strong>Wiki 这样写：</strong>一处写第一至第三关，另一处写第二至第四关使用非流式工具循环。</p><p><strong>代码实际表现：</strong>工具调用从第二关开始，第二至第四关是非流式；第一关没有工具调用。</p><p><strong>通俗解释：</strong>同一页给出了两个不同的课程范围，读者无法判断哪一关开始具备搜索能力。</p><p><strong>可能影响：</strong>降低阶段说明的可信度。</p><p><strong>建议修改：</strong>统一为第二至第四关，并明确第一关只有普通文字对话。</p><div class="issue-actions"><button data-locate="challenge1-3 是">在 Wiki 中找到这句话</button></div><details><summary>查看证据位置</summary><p><strong>Wiki：</strong>openwiki/repo/openwiki/workflows/tool-calling.md</p><p><strong>源码：</strong>source/repo/challenge1/frontend/lib/tools.ts; challenge2/frontend/lib/tools.ts</p></details></section></aside></div><script src="assets/mermaid.min.js"></script><script src="assets/app.js?v=20260907-2"></script></body></html>
