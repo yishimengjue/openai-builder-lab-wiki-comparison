@@ -1,16 +1,17 @@
 :root {
-  --ink: #17221e;
-  --muted: #637069;
-  --paper: #f4efe4;
-  --panel: #fffdf8;
-  --line: #d8cfc0;
-  --forest: #174f42;
-  --mint: #cfe4d7;
-  --orange: #d45b32;
-  --gold: #c89527;
-  --red: #a9332c;
-  --blue: #2d658c;
-  --shadow: 0 18px 45px rgba(63, 49, 31, .09);
+  --ink: #1f2329;
+  --muted: #646a73;
+  --paper: #eef2f7;
+  --panel: #ffffff;
+  --line: #e2e5e9;
+  --accent: #3370ff;
+  --forest: #3370ff;
+  --mint: #edf3ff;
+  --orange: #607394;
+  --gold: #7b879b;
+  --red: #b46458;
+  --blue: #3370ff;
+  --shadow: 0 2px 8px rgba(31, 35, 41, .025);
 }
 
 * { box-sizing: border-box; }
@@ -18,13 +19,16 @@ html { scroll-behavior: smooth; }
 body {
   margin: 0;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 8% 0, rgba(168, 208, 187, .55), transparent 29rem),
-    radial-gradient(circle at 94% 8%, rgba(238, 193, 155, .42), transparent 25rem),
-    var(--paper);
+  background: linear-gradient(180deg, #f4f7fb 0, var(--paper) 480px);
   font-family: "Avenir Next", "PingFang SC", sans-serif;
   line-height: 1.68;
 }
+
+/* A shared neutral workspace theme keeps source content and audit labels distinct. */
+html { scroll-padding-top: 78px; }
+button, input, select { font-family: inherit; }
+body [hidden] { display: none !important; }
+:is(button, a, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 a { color: var(--forest); }
 button, input { font: inherit; }
@@ -319,4 +323,122 @@ h1 { max-width: 980px; margin: 8px 0 20px; font-size: clamp(42px, 7vw, 78px); le
   .audit-rail { display: block; }
   .hero, .page-hero, .dashboard { padding-left: 15px; padding-right: 15px; }
   .wiki-doc { padding: 18px 14px; }
+}
+
+/* Override the former multicolour exhibition chrome without rewriting any Wiki text. */
+h1, h2, h3 { font-family: "Avenir Next", "PingFang SC", sans-serif; letter-spacing: normal; }
+h1 { margin: 8px 0 16px; font-size: clamp(28px, 3.5vw, 42px); line-height: 1.35; }
+h2, h3 { line-height: 1.45; }
+.topbar { gap: 8px; min-height: 60px; padding: 10px 24px; border-bottom: 1px solid var(--line); color: var(--ink); background: rgba(255, 255, 255, .97); box-shadow: none; backdrop-filter: blur(8px); }
+.topbar .brand { margin-right: 20px; color: #245bdb; font-size: 17px; font-weight: 700; }
+.topbar a:not(.brand) { padding: 7px 12px; border: 1px solid transparent; border-radius: 6px; color: #646a73; font-size: 13px; }
+.topbar a:not(.brand):hover { color: var(--accent); background: #f6f8fc; }
+.topbar a.active { border-color: #e4ecff; color: #245bdb; background: #f0f5ff; }
+.button, button { border-color: #d5d9df; border-radius: 6px; color: #373c43; background: #fff; }
+.button:hover, button:hover { border-color: #b0c6f7; }
+.button.primary, button.primary, button.is-active { border-color: var(--accent); color: #fff; background: var(--accent); }
+.hero, .page-hero { padding-top: 32px; }
+.lead { color: #515965; font-size: 17px; line-height: 1.8; }
+.eyebrow { color: #6a778c; font-weight: 650; letter-spacing: .04em; }
+.intro-hero h1 { font-size: clamp(28px, 3.8vw, 42px); }
+.comparison-hero code { color: #526787; background: #edf2f9; }
+.conclusion-panel { padding: 22px; border: 1px solid #dfe5ef; border-radius: 9px; color: var(--ink); background: #fff; box-shadow: none; }
+.conclusion-panel-heading span { color: #5c7194; letter-spacing: .03em; }
+.conclusion-panel-heading h2 { color: var(--ink); font-size: clamp(23px, 2.8vw, 30px); }
+.conclusion-panel-heading p { color: var(--muted); }
+.conclusion-grid article, .tool-verdict-grid article { border: 1px solid #e5e9ef; border-radius: 6px; background: #fafbfc; }
+.conclusion-grid article > strong { color: #566c91; }
+.conclusion-grid h3, .tool-verdict-grid strong { color: var(--ink); font-family: inherit; }
+.tool-verdict-grid strong { font-size: 19px; }
+.tool-verdict-grid h3 { color: #4c6590; }
+.conclusion-grid p, .tool-verdict-grid p { color: var(--muted); }
+.purpose-strip div, .plain-summary article, .example-card { border-radius: 8px; box-shadow: none; }
+.purpose-strip strong, .plain-summary span, .example-card span { color: #627494; letter-spacing: .025em; }
+.plain-summary strong { font-family: inherit; font-size: 20px; }
+.input-card, .process-card, .output-card { border-top: 3px solid #b7c7e0; }
+.section-title { margin-top: 32px; border-bottom: 1px solid #dce2eb; }
+.section-title h2 { font-size: clamp(23px, 2.8vw, 30px); }
+.tool-card, .panel, .issue-card, .diagram-card, .stat-card { border-radius: 8px; box-shadow: none; }
+.tool-card, .tool-card:nth-child(n) { border-top: 3px solid #b7c7e0; }
+.tool-card h3 { font-size: 22px; }
+.metric-row { border-color: #edf0f3; }
+.reading-card h3 { font-size: 23px; }
+.reading-step { border-color: #e2e6ec; border-radius: 7px; background: #f8f9fb; }
+.reading-step > span { border-radius: 7px; color: #4e6ca6; background: #eaf0fb; }
+.reading-arrow, .flow-arrow { color: #8395ae; }
+.toc { border-radius: 8px; background: #fff; }
+.toc a { border-color: #edf0f3; color: #536074; }
+.wiki-doc { border-radius: 8px; box-shadow: none; }
+.wiki-doc h1 { font-size: 31px; }
+.wiki-doc h2 { border-color: #edf0f3; font-size: 25px; }
+.wiki-doc h3 { font-size: 20px; }
+.wiki-doc pre { border: 1px solid #e7ecf2; border-radius: 6px; color: #35455c; background: #f6f8fb; font-size: 13px; }
+.wiki-doc :not(pre) > code { color: #50617a; background: #eef2f7; }
+.wiki-doc th, .wiki-doc td { border-color: #e2e6ec; }
+.doc-kicker { color: #72819a; letter-spacing: .04em; }
+.explanation-overview, .quality-overview, .issue-overview { border-color: #dfe5ee; border-radius: 8px; background: #fafbfc; box-shadow: none; }
+.issue-overview.no-errors { border-color: #dfe5ee; background: #fafbfc; }
+.explanation-card, .quality-card { border-color: #e1e7ef; border-radius: 6px; background: #fff; }
+.explanation-card > span, .quality-tag { border-radius: 4px; color: #536b94; background: #edf2fa; }
+.explanation-step, .explanation-step.wiki-step { border-radius: 5px; background: #f5f7fa; }
+.explanation-step strong, .explanation-step.wiki-step strong { color: #586a87; }
+.explanation-arrow { color: #8794a8; }
+.issue-index-item { border-color: #e1e6ee; border-radius: 6px; }
+.audit-quality-list, .audit-quality-item { border-color: #dfe6ef; border-radius: 6px; background: #fafbfc; }
+.audit-quality-list { border-top: 3px solid #bccbe4; }
+.audit-quality-item { background: #fff; }
+.audit-quality-actions a, .audit-quality-actions button { border-color: #dbe4f3; border-radius: 5px; color: #4b6593; background: #f6f8fc; }
+.audit-quality-actions a:hover, .audit-quality-actions button:hover { background: #edf3ff; }
+.audit-fact-heading { border-color: #dfe6f0; color: #5e6d85; }
+.source-diagnosis, .wiki-diagnosis { background: #f4f6f9; }
+.severity { border-radius: 4px; font-weight: 600; }
+.severity-critical { color: #995a51; background: #f7eeec; }
+.severity-high { color: #92693b; background: #f5f0e9; }
+.severity-medium, .severity-low, .severity-info { color: #647286; background: #eef1f5; }
+.critical-row, .high-row, .medium-row, .low-row, .info-row { border-left: 3px solid #ccd5e2; }
+.issue-target, .issue-card:target, .quality-card:target { outline: 3px solid #adc4f5; }
+.quality-context-target { background: #f0f5ff; box-shadow: inset 3px 0 #6694ef; }
+.quality-context-anchor::before { border-color: #cedcf7; border-radius: 5px; color: #4d6590; background: #eaf1ff; }
+.toc.quality-context-target { outline-color: #adc4f5; }
+.stat-card strong { font-family: inherit; font-size: 28px; }
+.matrix-wrap { border: 1px solid var(--line); border-radius: 6px; box-shadow: none; }
+.issue-tool-matrix thead th { color: #4a576d; background: #f3f6fb; }
+.issue-tool-matrix tfoot th, .issue-tool-matrix tfoot td { background: #f8fafc; }
+.matrix-mark.is-found { color: #62759a; background: #eaf0fa; }
+.diagram-fallback, .mermaid-fallback { border-color: #d5dce7; border-radius: 6px; color: #5a6679; background: #f7f9fc; }
+.review-update-notice { max-width: 1424px; margin: 24px auto 0; padding: 17px 21px; border: 1px solid #dce6fc; border-radius: 7px; background: #f4f7ff; }
+.review-update-notice > strong { font-size: 16px; }
+.review-update-notice p { margin: 7px 0 12px; color: var(--muted); font-size: 13px; }
+.review-update-notice .button { font-size: 13px; }
+.wiki-highlight-notice { margin: 12px 16px; padding: 12px 15px; border: 1px solid #c9d7ef; border-radius: 6px; color: #455875; background: #f0f5ff; font-size: 13px; }
+
+/* Standalone reader pages adapt themselves even when file:// blocks parent-frame access. */
+body.embed-reader { min-width: 0; background: #fff; }
+.embed-reader > .topbar,
+.embed-reader > .page-hero,
+.embed-reader > .explanation-overview,
+.embed-reader > .issue-overview,
+.embed-reader > .quality-overview,
+.embed-reader .reader-layout > .toc,
+.embed-reader .reader-layout > .audit-rail { display: none !important; }
+.embed-reader .reader-layout { display: block; max-width: none; margin: 0; padding: 0; }
+.embed-reader .reader { width: 100%; }
+.embed-reader .wiki-doc { margin: 0 0 12px; padding: 22px 24px; border: 0; border-radius: 0; }
+.embed-reader .wiki-doc h1 { font-size: 27px; }
+.embed-reader .wiki-doc h2 { font-size: 23px; }
+.embed-reader .wiki-doc h3 { font-size: 19px; }
+.embed-reader .wiki-doc p, .embed-reader .wiki-doc li { font-size: 14px; line-height: 1.85; }
+.embed-reader .quality-context-first { scroll-margin-top: 12px; }
+.embed-reader h2[id], .embed-reader .wiki-doc[id] { scroll-margin-top: 16px; }
+
+@media (max-width: 780px) {
+  .topbar { padding: 9px 14px; }
+  .topbar .brand { margin-right: 4px; font-size: 15px; }
+  .topbar a:not(.brand) { padding: 6px 9px; font-size: 12px; }
+  .hero, .page-hero { padding-top: 24px; }
+  .review-update-notice { margin: 16px 14px 0; }
+  .embed-reader .wiki-doc { padding: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wiki 原文横向对比 · Wiki 对比结果</title>
+  <link rel="stylesheet" href="assets/styles.css?v=20260907-compare2">
+  <link rel="stylesheet" href="assets/compare.css?v=20260907-compare2">
+</head>
+<body class="compare-page">
+  <nav class="topbar" aria-label="主导航">
+    <a class="brand" href="index.html">Wiki 对比结果</a>
+    <a href="index.html">对比首页</a>
+    <a href="repository-intro.html">仓库说明</a>
+    <a class="active" aria-current="page" href="compare.html">成品横向对比</a>
+    <a href="issue-compare.html">问题横向对比</a>
+    <a href="issue-summary.html">原问题汇总</a>
+  </nav>
+
+  <main class="compare-main">
+    <header class="compare-heading">
+      <div>
+        <p class="compare-eyebrow">同一仓库 · 五份工具产物</p>
+        <h1>Wiki 原文横向对比</h1>
+        <p>左右分别选择工具与章节，直接阅读完整产物。正文保留工具原说法，不混入核对结论。</p>
+      </div>
+      <a class="compare-action" href="issue-compare.html">查看问题与源码核对</a>
+    </header>
+
+    <div class="compare-topic" id="compare-topic" hidden>
+      <span>当前对照内容</span><strong id="compare-topic-text"></strong>
+      <button type="button" id="compare-clear-topic">清除原文定位</button>
+    </div>
+
+    <div class="compare-toolbar">
+      <div class="compare-sync-group">
+        <label class="compare-check" for="compare-sync">
+          <input type="checkbox" id="compare-sync" disabled>
+          <span>按阅读进度同步滚动</span>
+        </label>
+        <span class="compare-hint" id="compare-sync-note">默认独立滚动；相同进度不代表内容一一对应。</span>
+      </div>
+      <div class="compare-toolbar-actions">
+        <button type="button" class="compare-action" id="compare-swap">交换左右</button>
+        <button type="button" class="compare-action" id="compare-copy">复制当前对比链接</button>
+      </div>
+    </div>
+    <div class="compare-share" id="compare-share" hidden>
+      <label for="compare-share-url">链接已准备好，可选中复制。file:// 地址仅在同一份本地文件包中有效。</label>
+      <input id="compare-share-url" type="text" readonly>
+    </div>
+
+    <section class="compare-output-overview" aria-labelledby="compare-output-title">
+      <div class="compare-output-heading">
+        <div>
+          <h2 id="compare-output-title">两份产物的结构与重点</h2>
+          <p>随下方工具选择更新。点击原文依据，可在对应一侧查看具体内容。</p>
+        </div>
+        <button type="button" class="compare-action" id="compare-output-toggle" aria-expanded="true" aria-controls="compare-output-body">收起概览</button>
+      </div>
+      <div id="compare-output-body">
+        <div class="compare-output-grid">
+          <article class="compare-output-profile" id="compare-left-profile" aria-label="左侧工具产物概览"></article>
+          <article class="compare-output-profile" id="compare-right-profile" aria-label="右侧工具产物概览"></article>
+        </div>
+        <div class="compare-output-scope">
+          <p>以下归纳依据完整原文。数量只描述产物形式，不表示准确率、能力覆盖率或工具排名。</p>
+          <details>
+            <summary>计数口径</summary>
+            <p>仅统计完整原文中的二级标题、代码块、Mermaid 图表定义和固定版本源码超链接。不同工具的归档合并方式不同，因此不比较生成页数：DeepWiki Open 的 14 个章节合并在一个归档容器内，不能据此认为它只生成一页。源码超链接按出现次数计数，重复链接未去重，纯文本路径不计数；0 不表示没有源码线索。图表定义数不等于成功渲染数；代码块不含图表失败后的源码回退。Devin 始终统计英文原文，不计中文压缩摘要。结构数量也不能代替逐条源码核验。</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <div class="compare-grid">
+      <section class="compare-pane" id="compare-left" aria-labelledby="compare-left-title">
+        <header class="compare-pane-header">
+          <div class="compare-pane-tools">
+            <label class="compare-field compare-tool-field" for="compare-left-tool">
+              <span id="compare-left-title">左侧 Wiki</span>
+              <select id="compare-left-tool" aria-label="左侧工具"></select>
+            </label>
+            <label class="compare-field compare-language-field" for="compare-left-language">
+              <span>内容语言</span>
+              <select id="compare-left-language" aria-label="左侧内容语言"></select>
+            </label>
+          </div>
+          <p class="compare-provenance" id="compare-left-provenance"></p>
+          <div class="compare-chapter-row">
+            <label class="compare-field compare-chapter-field" for="compare-left-chapter">
+              <span>章节</span>
+              <select id="compare-left-chapter" disabled><option>正在读取章节</option></select>
+            </label>
+            <a class="compare-open" id="compare-left-open" href="local-skill.html" target="_blank" rel="noopener">打开单页</a>
+          </div>
+        </header>
+        <div class="compare-frame-wrap">
+          <iframe id="compare-left-frame" title="左侧完整 Wiki" referrerpolicy="same-origin"></iframe>
+          <div class="compare-loading" id="compare-left-loading"><span>正在加载左侧 Wiki…</span></div>
+        </div>
+        <footer class="compare-pane-footer">
+          <span class="compare-state" id="compare-left-state" role="status" aria-live="polite">正在加载</span>
+          <span class="compare-progress" id="compare-left-progress" aria-label="左侧阅读进度">0%</span>
+        </footer>
+      </section>
+
+      <section class="compare-pane" id="compare-right" aria-labelledby="compare-right-title">
+        <header class="compare-pane-header">
+          <div class="compare-pane-tools">
+            <label class="compare-field compare-tool-field" for="compare-right-tool">
+              <span id="compare-right-title">右侧 Wiki</span>
+              <select id="compare-right-tool" aria-label="右侧工具"></select>
+            </label>
+            <label class="compare-field compare-language-field" for="compare-right-language">
+              <span>内容语言</span>
+              <select id="compare-right-language" aria-label="右侧内容语言"></select>
+            </label>
+          </div>
+          <p class="compare-provenance" id="compare-right-provenance"></p>
+          <div class="compare-chapter-row">
+            <label class="compare-field compare-chapter-field" for="compare-right-chapter">
+              <span>章节</span>
+              <select id="compare-right-chapter" disabled><option>正在读取章节</option></select>
+            </label>
+            <a class="compare-open" id="compare-right-open" href="codewiki.html" target="_blank" rel="noopener">打开单页</a>
+          </div>
+        </header>
+        <div class="compare-frame-wrap">
+          <iframe id="compare-right-frame" title="右侧完整 Wiki" referrerpolicy="same-origin"></iframe>
+          <div class="compare-loading" id="compare-right-loading"><span>正在加载右侧 Wiki…</span></div>
+        </div>
+        <footer class="compare-pane-footer">
+          <span class="compare-state" id="compare-right-state" role="status" aria-live="polite">正在加载</span>
+          <span class="compare-progress" id="compare-right-progress" aria-label="右侧阅读进度">0%</span>
+        </footer>
+      </section>
+    </div>
+
+    <p class="compare-footnote">Local Skill、CodeWiki、OpenWiki、DeepWiki Open 使用现有中文原始产物。DeepWiki（Devin 托管版）默认展示英文原文；它的中文选项是展厅制作的压缩摘要，不是工具产物，也不是完整翻译。</p>
+    <p class="compare-announcement" id="compare-announcement" role="status" aria-live="polite"></p>
+    <noscript><p class="compare-noscript">此页需要 JavaScript 才能切换工具。也可直接打开 <a href="local-skill.html">Local Skill</a>、<a href="codewiki.html">CodeWiki</a>、<a href="openwiki.html">OpenWiki</a>、<a href="deepwiki-open.html">DeepWiki Open</a> 或 <a href="devinwiki.html">DeepWiki 原文</a>。</p></noscript>
+  </main>
+  <script src="assets/app.js?v=20260907-compare2"></script>
+  <script src="assets/wiki-output-profiles.js?v=20260907-compare2"></script>
+  <script src="assets/compare.js?v=20260907-compare2"></script>
+</body>
+</html>
